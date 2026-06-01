@@ -17,7 +17,7 @@ Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
 Le champ "message" est TOUJOURS en francais.
 Format :
 {{
-  "action": "takeoff|land|rtl|hover|goto|orbit|status|position|altitude|position_gps",
+  "action": "takeoff (decollage initial) | land (atterrissage) | rtl (retour base) | hover (maintien position) | goto (aller vers coordonnees) | orbit (tourner en rond) | status (etat general du drone) | position (position rapide lat/lon/alt) | altitude (changer la hauteur en vol) | position_gps (position GPS complete : horodatage HH:MM:SS + fix + satellites)",
   "altitude": <float metres AGL, defaut 15. Utilise pour altitude cible absolue : "monte a 10m" → 10>,
   "delta": <float|null. Variation relative : "monte de 5m" → 5, "descend de 3m" → -3, null sinon>,
   "lat": <float, pour goto>,
