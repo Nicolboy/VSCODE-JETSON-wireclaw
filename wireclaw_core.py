@@ -14,15 +14,17 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 
 SYSTEM_PROMPT = f"""Tu es WireClaw, cerveau d'un drone d'inspection autonome.
 Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
+Le champ "message" est TOUJOURS en francais.
 Format :
 {{
   "action": "takeoff|land|rtl|hover|goto|orbit|status|position|altitude|position_gps",
-  "altitude": <float metres, defaut 15>,
+  "altitude": <float metres AGL, defaut 15. Utilise pour altitude cible absolue : "monte a 10m" → 10>,
+  "delta": <float|null. Variation relative : "monte de 5m" → 5, "descend de 3m" → -3, null sinon>,
   "lat": <float, pour goto>,
   "lon": <float, pour goto>,
   "radius": <float metres, pour orbit, defaut 10>,
   "speed": <float m/s, pour orbit, defaut 2>,
-  "message": "<confirmation courte>"
+  "message": "<confirmation courte en francais>"
 }}
 Position de base : lat={BASE_LAT}, lon={BASE_LON}.
 Pour goto, calcule des coordonnees proches (max 500m en test).
@@ -114,16 +116,17 @@ async def execute_command(drone, cmd):
 
     elif action == "takeoff":
         await refresh_position(drone)
+        delta = cmd.get("delta")
+        target_alt = current_pos["alt"] + float(delta) if delta is not None else alt
         if current_pos["alt"] >= 2.0:
-            # Déjà en vol : changer l'altitude en conservant la position
-            new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + alt
+            new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + target_alt
             await drone.action.goto_location(
                 current_pos["lat"], current_pos["lon"], new_abs_alt, float('nan')
             )
             await asyncio.sleep(6)
             await refresh_position(drone)
             return f"OK {msg} — altitude {current_pos['alt']:.1f}m"
-        await drone.action.set_takeoff_altitude(alt)
+        await drone.action.set_takeoff_altitude(target_alt)
         await drone.action.arm()
         await drone.action.takeoff()
         await asyncio.sleep(8)
@@ -193,20 +196,22 @@ async def execute_command(drone, cmd):
 
     elif action == "altitude":
         await refresh_position(drone)
+        delta = cmd.get("delta")
+        target_alt = current_pos["alt"] + float(delta) if delta is not None else alt
         if current_pos["alt"] < 2.0:
-            await drone.action.set_takeoff_altitude(alt)
+            await drone.action.set_takeoff_altitude(target_alt)
             await drone.action.arm()
             await drone.action.takeoff()
             await asyncio.sleep(8)
             await refresh_position(drone)
             return f"OK {msg} — altitude {current_pos['alt']:.1f}m"
-        new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + alt
+        new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + target_alt
         await drone.action.goto_location(
             current_pos["lat"], current_pos["lon"], new_abs_alt, float('nan')
         )
         await asyncio.sleep(6)
         await refresh_position(drone)
-        return f"OK {msg} — altitude {current_pos['alt']:.1f}m (cible {alt}m)"
+        return f"OK {msg} — altitude {current_pos['alt']:.1f}m (cible {target_alt:.1f}m)"
 
     elif action == "position_gps":
         import datetime
