@@ -107,7 +107,14 @@ async def execute_command(drone, cmd):
     elif action == "takeoff":
         await refresh_position(drone)
         if current_pos["alt"] >= 2.0:
-            return "Deja en vol"
+            # Déjà en vol : changer l'altitude en conservant la position
+            new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + alt
+            await drone.action.goto_location(
+                current_pos["lat"], current_pos["lon"], new_abs_alt, float('nan')
+            )
+            await asyncio.sleep(6)
+            await refresh_position(drone)
+            return f"OK {msg} — altitude {current_pos['alt']:.1f}m"
         await drone.action.set_takeoff_altitude(alt)
         await drone.action.arm()
         await drone.action.takeoff()
