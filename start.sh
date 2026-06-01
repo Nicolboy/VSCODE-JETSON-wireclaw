@@ -60,4 +60,4 @@ sleep 2
 # 5. Lancer WireClaw
 echo "Lancement WireClaw..."
 cd ~/wireclaw
-python3 wireclaw_core.py
+uvicorn web_server:app --host 0.0.0.0 --port 8765
