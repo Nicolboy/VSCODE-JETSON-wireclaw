@@ -16,7 +16,7 @@ SYSTEM_PROMPT = f"""Tu es WireClaw, cerveau d'un drone d'inspection autonome.
 Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
 Format :
 {{
-  "action": "takeoff|land|rtl|hover|goto|orbit|status|position",
+  "action": "takeoff|land|rtl|hover|goto|orbit|status|position|altitude|position_gps",
   "altitude": <float metres, defaut 15>,
   "lat": <float, pour goto>,
   "lon": <float, pour goto>,
@@ -191,6 +191,39 @@ async def execute_command(drone, cmd):
                     f"Centre : ({lat0:.6f}, {lon0:.6f})")
         return f"OK {msg} — orbite native {radius}m a {speed}m/s"
 
+    elif action == "altitude":
+        await refresh_position(drone)
+        if current_pos["alt"] < 2.0:
+            await drone.action.set_takeoff_altitude(alt)
+            await drone.action.arm()
+            await drone.action.takeoff()
+            await asyncio.sleep(8)
+            await refresh_position(drone)
+            return f"OK {msg} — altitude {current_pos['alt']:.1f}m"
+        new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + alt
+        await drone.action.goto_location(
+            current_pos["lat"], current_pos["lon"], new_abs_alt, float('nan')
+        )
+        await asyncio.sleep(6)
+        await refresh_position(drone)
+        return f"OK {msg} — altitude {current_pos['alt']:.1f}m (cible {alt}m)"
+
+    elif action == "position_gps":
+        import datetime
+        await refresh_position(drone)
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        async for gps in drone.telemetry.gps_info():
+            fix   = gps.fix_type
+            sats  = gps.num_satellites
+            break
+        return (f"\nHorodatage : {ts}\n"
+                f"Latitude   : {current_pos['lat']:.7f}\n"
+                f"Longitude  : {current_pos['lon']:.7f}\n"
+                f"Alt AGL    : {current_pos['alt']:.2f} m\n"
+                f"Alt MSL    : {current_pos['abs_alt']:.2f} m\n"
+                f"Fix GPS    : {fix}\n"
+                f"Satellites : {sats}")
+
     elif action == "hover":
         await drone.action.hold()
         return "OK " + msg
@@ -228,7 +261,7 @@ async def init():
 async def main():
     await init()
     print("\nWireClaw pret")
-    print("Commandes : takeoff, goto, orbit, status, position, hover, rtl, land\n")
+    print("Commandes : takeoff, altitude, goto, orbit, status, position, position_gps, hover, rtl, land\n")
 
     while True:
         try:
