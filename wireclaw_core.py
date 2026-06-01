@@ -63,24 +63,27 @@ async def monitor_armed(drone):
     global drone_armed
     async for is_armed in drone.telemetry.armed():
         drone_armed = is_armed
+        await asyncio.sleep(0)  # cède le contrôle après chaque mise à jour
 
 async def monitor_telemetry(drone):
-    """Met à jour en continu batterie et mode de vol dans telemetry_cache."""
-    async def watch_battery():
-        async for bat in drone.telemetry.battery():
-            raw = bat.remaining_percent
-            telemetry_cache["battery"] = abs(raw) * 100 if abs(raw) <= 1 else abs(raw)
-
-    async def watch_mode():
-        async for fm in drone.telemetry.flight_mode():
-            telemetry_cache["mode"] = str(fm)
-
-    async def watch_gps():
-        async for gps in drone.telemetry.gps_info():
-            telemetry_cache["gps_fix"]  = str(gps.fix_type)
-            telemetry_cache["gps_sats"] = gps.num_satellites
-
-    await asyncio.gather(watch_battery(), watch_mode(), watch_gps())
+    """Sonde batterie, mode et GPS par polling — pause 1s entre chaque cycle
+    pour ne pas saturer l'event loop asyncio avec des streams gRPC continus."""
+    while True:
+        try:
+            async for bat in drone.telemetry.battery():
+                raw = bat.remaining_percent
+                telemetry_cache["battery"] = abs(raw) * 100 if abs(raw) <= 1 else abs(raw)
+                break
+            async for fm in drone.telemetry.flight_mode():
+                telemetry_cache["mode"] = str(fm)
+                break
+            async for gps in drone.telemetry.gps_info():
+                telemetry_cache["gps_fix"]  = str(gps.fix_type)
+                telemetry_cache["gps_sats"] = gps.num_satellites
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(1)
 
 async def interpret_command(text):
     response = client.models.generate_content(
@@ -260,8 +263,8 @@ async def init():
                 drone_armed = is_armed
                 print(f"Etat initial : {'arme' if drone_armed else 'desarme'}")
                 break
-            asyncio.ensure_future(monitor_armed(drone))
-            asyncio.ensure_future(monitor_telemetry(drone))
+            asyncio.create_task(monitor_armed(drone))
+            asyncio.create_task(monitor_telemetry(drone))
             break
 
 async def main():
