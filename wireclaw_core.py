@@ -105,7 +105,8 @@ async def execute_command(drone, cmd):
                 f"Arme      : {drone_armed}")
 
     elif action == "takeoff":
-        if drone_armed:
+        await refresh_position(drone)
+        if current_pos["alt"] >= 2.0:
             return "Deja en vol"
         await drone.action.set_takeoff_altitude(alt)
         await drone.action.arm()
