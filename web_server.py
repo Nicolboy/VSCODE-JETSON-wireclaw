@@ -28,8 +28,11 @@ class CommandRequest(BaseModel):
 
 @app.post("/command")
 async def command(req: CommandRequest):
-    response = await process(req.text)
-    return {"response": response}
+    try:
+        response = await process(req.text)
+        return {"response": response}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"response": f"Erreur : {e}"})
 
 
 @app.get("/status")

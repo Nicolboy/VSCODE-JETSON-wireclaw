@@ -96,7 +96,7 @@ async def interpret_command(text):
 async def execute_command(drone, cmd):
     global drone_armed
     action = cmd.get("action")
-    alt    = float(cmd.get("altitude", 15))
+    alt    = float(cmd.get("altitude") or 15)
     msg    = cmd.get("message", "OK")
 
     if action == "position":
