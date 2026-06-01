@@ -33,6 +33,7 @@ Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 drone_armed = False
 current_pos = {"lat": BASE_LAT, "lon": BASE_LON, "alt": 0, "abs_alt": 584}
 mav = None
+drone = None
 
 def init_pymavlink():
     global mav
@@ -197,7 +198,9 @@ async def execute_command(drone, cmd):
 
     return "Action inconnue : " + action
 
-async def main():
+async def init():
+    """Initialise pymavlink, MAVSDK et démarre monitor_armed en tâche de fond."""
+    global drone, drone_armed
     init_pymavlink()
     drone = System()
     await drone.connect(system_address=MAVLINK_ADDRESS)
@@ -212,6 +215,8 @@ async def main():
             asyncio.ensure_future(monitor_armed(drone))
             break
 
+async def main():
+    await init()
     print("\nWireClaw pret")
     print("Commandes : takeoff, goto, orbit, status, position, hover, rtl, land\n")
 
