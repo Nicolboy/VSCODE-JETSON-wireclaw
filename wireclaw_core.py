@@ -34,7 +34,7 @@ Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 
 drone_armed = False
 current_pos = {"lat": BASE_LAT, "lon": BASE_LON, "alt": 0, "abs_alt": 584}
-telemetry_cache = {"battery": -1.0, "mode": "UNKNOWN"}
+telemetry_cache = {"battery": -1.0, "mode": "UNKNOWN", "gps_fix": "UNKNOWN", "gps_sats": 0}
 mav = None
 drone = None
 
@@ -75,7 +75,12 @@ async def monitor_telemetry(drone):
         async for fm in drone.telemetry.flight_mode():
             telemetry_cache["mode"] = str(fm)
 
-    await asyncio.gather(watch_battery(), watch_mode())
+    async def watch_gps():
+        async for gps in drone.telemetry.gps_info():
+            telemetry_cache["gps_fix"]  = str(gps.fix_type)
+            telemetry_cache["gps_sats"] = gps.num_satellites
+
+    await asyncio.gather(watch_battery(), watch_mode(), watch_gps())
 
 async def interpret_command(text):
     response = client.models.generate_content(
@@ -217,17 +222,13 @@ async def execute_command(drone, cmd):
         import datetime
         await refresh_position(drone)
         ts = datetime.datetime.now().strftime("%H:%M:%S")
-        async for gps in drone.telemetry.gps_info():
-            fix   = gps.fix_type
-            sats  = gps.num_satellites
-            break
         return (f"\nHorodatage : {ts}\n"
                 f"Latitude   : {current_pos['lat']:.7f}\n"
                 f"Longitude  : {current_pos['lon']:.7f}\n"
                 f"Alt AGL    : {current_pos['alt']:.2f} m\n"
                 f"Alt MSL    : {current_pos['abs_alt']:.2f} m\n"
-                f"Fix GPS    : {fix}\n"
-                f"Satellites : {sats}")
+                f"Fix GPS    : {telemetry_cache['gps_fix']}\n"
+                f"Satellites : {telemetry_cache['gps_sats']}")
 
     elif action == "hover":
         await drone.action.hold()
