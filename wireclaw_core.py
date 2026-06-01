@@ -248,7 +248,7 @@ async def init():
     """Initialise pymavlink, MAVSDK et démarre les tâches de fond de télémétrie."""
     global drone, drone_armed
     # init_pymavlink est synchrone et bloquant — run_in_executor évite de geler l'event loop
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, init_pymavlink)
     drone = System()
     await drone.connect(system_address=MAVLINK_ADDRESS)
