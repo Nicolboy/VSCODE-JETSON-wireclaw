@@ -8,6 +8,8 @@ pkill -f "hermes" 2>/dev/null
 pkill -f "arducopter" 2>/dev/null
 pkill -f "mavproxy" 2>/dev/null
 pkill -f "wireclaw_core" 2>/dev/null
+pkill -f "uvicorn" 2>/dev/null
+pkill -f "web_server" 2>/dev/null
 sleep 2
 sudo fuser -k 14550/udp 14551/udp 14552/udp 2>/dev/null
 sleep 1
