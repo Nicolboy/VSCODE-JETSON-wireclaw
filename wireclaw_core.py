@@ -16,7 +16,7 @@ SYSTEM_PROMPT = f"""Tu es WireClaw, cerveau d'un drone d'inspection autonome.
 Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
 Format :
 {{
-  "action": "takeoff|land|rtl|hover|goto|orbit|status",
+  "action": "takeoff|land|rtl|hover|goto|orbit|status|position",
   "altitude": <float metres, defaut 15>,
   "lat": <float, pour goto>,
   "lon": <float, pour goto>,
@@ -82,7 +82,13 @@ async def execute_command(drone, cmd):
     alt    = float(cmd.get("altitude", 15))
     msg    = cmd.get("message", "OK")
 
-    if action == "status":
+    if action == "position":
+        await refresh_position(drone)
+        return (f"\nGPS       : {current_pos['lat']:.6f}, {current_pos['lon']:.6f}\n"
+                f"Altitude  : {current_pos['alt']:.1f} m (AGL)\n"
+                f"Alt abs   : {current_pos['abs_alt']:.1f} m (MSL)")
+
+    elif action == "status":
         await refresh_position(drone)
         async for bat in drone.telemetry.battery():
             raw = bat.remaining_percent
@@ -199,7 +205,7 @@ async def main():
             break
 
     print("\nWireClaw pret")
-    print("Commandes : takeoff, goto, orbit, status, hover, rtl, land\n")
+    print("Commandes : takeoff, goto, orbit, status, position, hover, rtl, land\n")
 
     while True:
         try:
