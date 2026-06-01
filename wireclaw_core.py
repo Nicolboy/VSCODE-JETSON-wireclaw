@@ -32,6 +32,7 @@ Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 
 drone_armed = False
 current_pos = {"lat": BASE_LAT, "lon": BASE_LON, "alt": 0, "abs_alt": 584}
+telemetry_cache = {"battery": -1.0, "mode": "UNKNOWN"}
 mav = None
 drone = None
 
@@ -60,6 +61,19 @@ async def monitor_armed(drone):
     global drone_armed
     async for is_armed in drone.telemetry.armed():
         drone_armed = is_armed
+
+async def monitor_telemetry(drone):
+    """Met à jour en continu batterie et mode de vol dans telemetry_cache."""
+    async def watch_battery():
+        async for bat in drone.telemetry.battery():
+            raw = bat.remaining_percent
+            telemetry_cache["battery"] = abs(raw) * 100 if abs(raw) <= 1 else abs(raw)
+
+    async def watch_mode():
+        async for fm in drone.telemetry.flight_mode():
+            telemetry_cache["mode"] = str(fm)
+
+    await asyncio.gather(watch_battery(), watch_mode())
 
 async def interpret_command(text):
     response = client.models.generate_content(
@@ -91,18 +105,11 @@ async def execute_command(drone, cmd):
 
     elif action == "status":
         await refresh_position(drone)
-        async for bat in drone.telemetry.battery():
-            raw = bat.remaining_percent
-            pct = abs(raw) * 100 if abs(raw) <= 1 else abs(raw)
-            break
-        async for fm in drone.telemetry.flight_mode():
-            mode = str(fm)
-            break
         return (f"\nPosition : {current_pos['lat']:.6f}, {current_pos['lon']:.6f}\n"
                 f"Altitude  : {current_pos['alt']:.1f}m (AGL)\n"
                 f"Abs alt   : {current_pos['abs_alt']:.1f}m\n"
-                f"Batterie  : {pct:.0f}%\n"
-                f"Mode      : {mode}\n"
+                f"Batterie  : {telemetry_cache['battery']:.0f}%\n"
+                f"Mode      : {telemetry_cache['mode']}\n"
                 f"Arme      : {drone_armed}")
 
     elif action == "takeoff":
@@ -199,9 +206,11 @@ async def execute_command(drone, cmd):
     return "Action inconnue : " + action
 
 async def init():
-    """Initialise pymavlink, MAVSDK et démarre monitor_armed en tâche de fond."""
+    """Initialise pymavlink, MAVSDK et démarre les tâches de fond de télémétrie."""
     global drone, drone_armed
-    init_pymavlink()
+    # init_pymavlink est synchrone et bloquant — run_in_executor évite de geler l'event loop
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, init_pymavlink)
     drone = System()
     await drone.connect(system_address=MAVLINK_ADDRESS)
     print("Connexion MAVSDK...")
@@ -213,6 +222,7 @@ async def init():
                 print(f"Etat initial : {'arme' if drone_armed else 'desarme'}")
                 break
             asyncio.ensure_future(monitor_armed(drone))
+            asyncio.ensure_future(monitor_telemetry(drone))
             break
 
 async def main():

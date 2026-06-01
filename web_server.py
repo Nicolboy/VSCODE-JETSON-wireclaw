@@ -34,21 +34,15 @@ async def command(req: CommandRequest):
 
 @app.get("/status")
 async def status():
-    await wireclaw_core.refresh_position(wireclaw_core.drone)
-    async for bat in wireclaw_core.drone.telemetry.battery():
-        raw = bat.remaining_percent
-        pct = abs(raw) * 100 if abs(raw) <= 1 else abs(raw)
-        break
-    async for fm in wireclaw_core.drone.telemetry.flight_mode():
-        mode = str(fm)
-        break
+    # Lecture pure depuis les caches mis à jour par les tâches de fond —
+    # aucun appel bloquant, réponse instantanée
     return {
         "lat":     wireclaw_core.current_pos["lat"],
         "lon":     wireclaw_core.current_pos["lon"],
         "alt":     round(wireclaw_core.current_pos["alt"], 2),
         "abs_alt": round(wireclaw_core.current_pos["abs_alt"], 2),
-        "battery": round(pct, 1),
-        "mode":    mode,
+        "battery": round(wireclaw_core.telemetry_cache["battery"], 1),
+        "mode":    wireclaw_core.telemetry_cache["mode"],
         "armed":   wireclaw_core.drone_armed,
     }
 
