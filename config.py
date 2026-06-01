@@ -4,7 +4,7 @@ import os
 load_dotenv()
 
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL     = "gemini-2.0-flash"
+GEMINI_MODEL     = "gemini-2.5-flash"
 MAVLINK_ADDRESS  = "udp://:14551"
 MAVLINK_PYMAV    = "udpin:0.0.0.0:14552"
 NATS_SERVER      = "nats://localhost:4222"

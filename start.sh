@@ -13,6 +13,10 @@ pkill -f "web_server" 2>/dev/null
 sleep 2
 sudo fuser -k 14550/udp 14551/udp 14552/udp 2>/dev/null
 sleep 1
+# Créer le hotspot WiFi drone
+echo "Démarrage hotspot WireClaw..."
+sudo nmcli dev wifi hotspot ifname wlP1p1s0 ssid "WireClaw" password "REDACTED_WIFI_PASSWORD"
+sleep 3
 
 # 2. Lancer ArduCopter SITL directement
 echo "Lancement ArduCopter..."
