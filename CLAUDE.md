@@ -8,7 +8,7 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 ## Architecture
 - **Jetson Orin Nano 8Go** : station sol, héberge WireClaw + SITL
 - **ESP32 DevKitV4** : relais WiFi↔UART (firmware PlatformIO sur Windows)
-- **Pi Zero 2W** : à venir — flux vidéo caméra + relais série vers Matek H743
+- **Pi Zero 2W** : IP 192.168.1.132 — flux vidéo H.264 UDP → Jetson (câblé, arrêté pour l'instant)
 - **Matek H743** : à venir — contrôleur de vol ArduPilot réel
 
 ## Stack logicielle
@@ -25,12 +25,15 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 - `.env` : secrets — NE JAMAIS MODIFIER NI COMMITTER
 - `start.sh` : lance ArduCopter + MAVProxy + WireClaw automatiquement
 - `sitl_params.parm` : paramètres SITL (batterie désactivée)
+- `receive_cam.py` : réception H.264 UDP port 5600 → MJPEG port 5601 (Pi Zero)
 
 ## Ports réseau
 - 5760 TCP : ArduCopter ↔ MAVProxy
 - 14550 UDP : MAVProxy output standard + ESP32 source
 - 14551 UDP : MAVSDK (WireClaw) + heartbeats ESP32
 - 14552 UDP : pymavlink (WireClaw)
+- 5600 UDP : flux H.264 RTP entrant depuis Pi Zero (caméra OV5647)
+- 5601 TCP : MJPEG stream exposé par receive_cam.py (→ YOLOv8, interface web)
 
 ## Réseau local
 - Jetson Ethernet : 192.168.1.84
@@ -59,6 +62,15 @@ nmcli dev status | grep wifi
 # Tuer Hermes si actif (occupe port 14550)
 pkill -f hermes
 
+# Lancer la réception caméra Pi Zero (quand Pi Zero actif)
+python3 ~/wireclaw/receive_cam.py
+
+# Vérifier MJPEG stream caméra
+curl -s --max-time 2 http://localhost:5601/ | head -1
+
+# Pipeline GStreamer brute (debug)
+gst-launch-1.0 udpsrc port=5600 ! application/x-rtp,payload=96 ! rtph264depay ! avdec_h264 ! videoconvert ! fakesink
+
 # Git commit + push
 git add . && git commit -m "message" && git push origin master
 ```
@@ -73,14 +85,15 @@ git add . && git commit -m "message" && git push origin master
 - `orbit` → orbite native (fallback waypoints en SITL)
 
 ## Prochaines étapes
-1. Réception Pi Zero 2W + caméra OV5647 (en attente livraison)
+1. ~~Réception Pi Zero 2W + caméra OV5647~~ ✅ Pi Zero IP 192.168.1.132, reçu et testé
 2. Câblage UART ESP32 ↔ Pi Zero (GPIO17→GPIO15, GPIO16←GPIO14, GND)
-3. Flux vidéo GStreamer CSI → UDP → Jetson
-4. Interface web FastAPI + HTML (flux vidéo + commandes)
-5. Matek H743 + ArduPilot réel (remplace SITL)
-6. SkyDroid C12 (caméra thermique + gimbal 3 axes, 117g)
-7. YOLOv8 détection anomalies thermiques
-8. Whisper local (transcription vocale)
+3. ~~Préparation réception flux H.264 UDP Jetson~~ ✅ receive_cam.py prêt, port 5600→5601
+4. Activer receive_cam.py quand Pi Zero remis en service + ouvrir port 5600 iptables
+5. Intégrer MJPEG 5601 dans l'interface web (flux vidéo + commandes)
+6. Matek H743 + ArduPilot réel (remplace SITL)
+7. SkyDroid C12 (caméra thermique + gimbal 3 axes, 117g)
+8. YOLOv8 détection anomalies thermiques
+9. Whisper local (transcription vocale)
 
 ## Gitea
 - WireClaw Python : git.syoul.fr/nicoboy/wireclaw
