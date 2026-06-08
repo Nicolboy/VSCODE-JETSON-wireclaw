@@ -18,6 +18,8 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 - Gemini 2.0 Flash API (clé dans .env, jamais en dur)
 - MAVProxy en daemon (ports TCP:5760, UDP:14550/14551/14552)
 - ArduPilot SITL (binaire ARM64 ~/ardupilot/build/sitl/bin/arducopter)
+- PyTorch 2.8.0 + CUDA 12.6 (wheel Jetson : pypi.jetson-ai-lab.io/jp6/cu126, GPU Orin)
+- ultralytics 8.4.62 (YOLOv8), numpy 1.26.4 (≥2 incompatible avec torch 2.8), cv2 4.5.4 système
 
 ## Fichiers principaux
 - `wireclaw_core.py` : cerveau principal, boucle de commande
@@ -92,7 +94,7 @@ git add . && git commit -m "message" && git push origin master
 5. Intégrer MJPEG 5601 dans l'interface web (flux vidéo + commandes)
 6. Matek H743 + ArduPilot réel (remplace SITL)
 7. SkyDroid C12 (caméra thermique + gimbal 3 axes, 117g)
-8. YOLOv8 détection anomalies thermiques
+8. ~~YOLOv8 installé~~ ✅ ultralytics + torch 2.8 CUDA sur Orin — intégrer dans receive_cam.py
 9. Whisper local (transcription vocale)
 
 ## Gitea
