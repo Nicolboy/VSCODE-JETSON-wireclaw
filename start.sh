@@ -66,4 +66,4 @@ sleep 2
 # 5. Lancer WireClaw
 echo "Lancement WireClaw..."
 cd ~/wireclaw
-uvicorn web_server:app --host 0.0.0.0 --port 8765
+/home/nicoboy/.local/bin/uvicorn web_server:app --host 0.0.0.0 --port 8765
