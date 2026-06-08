@@ -32,7 +32,7 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 - 14550 UDP : MAVProxy output standard + ESP32 source
 - 14551 UDP : MAVSDK (WireClaw) + heartbeats ESP32
 - 14552 UDP : pymavlink (WireClaw)
-- 5600 UDP : flux H.264 RTP entrant depuis Pi Zero (caméra OV5647)
+- 5600 UDP : flux H.264 RTP entrant depuis Pi Zero (caméra OV5647) — iptables ACCEPT persistant
 - 5601 TCP : MJPEG stream exposé par receive_cam.py (→ YOLOv8, interface web)
 
 ## Réseau local
@@ -88,7 +88,7 @@ git add . && git commit -m "message" && git push origin master
 1. ~~Réception Pi Zero 2W + caméra OV5647~~ ✅ Pi Zero IP 192.168.1.132, reçu et testé
 2. Câblage UART ESP32 ↔ Pi Zero (GPIO17→GPIO15, GPIO16←GPIO14, GND)
 3. ~~Préparation réception flux H.264 UDP Jetson~~ ✅ receive_cam.py prêt, port 5600→5601
-4. Activer receive_cam.py quand Pi Zero remis en service + ouvrir port 5600 iptables
+4. Activer receive_cam.py quand Pi Zero remis en service (port 5600 UDP déjà ouvert iptables)
 5. Intégrer MJPEG 5601 dans l'interface web (flux vidéo + commandes)
 6. Matek H743 + ArduPilot réel (remplace SITL)
 7. SkyDroid C12 (caméra thermique + gimbal 3 axes, 117g)
