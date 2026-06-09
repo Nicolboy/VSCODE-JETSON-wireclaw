@@ -81,8 +81,8 @@ def draw_overlay(frame: np.ndarray) -> np.ndarray:
     h_res   = stats.get("height", "?")
     fps     = stats.get("fps", "?")
     enc     = stats.get("encoder", "?")
-    temp    = stats.get("temp", "?")
-    cpu     = stats.get("cpu", "?")
+    temp    = stats.get("temp_c", "?")
+    cpu     = stats.get("cpu_pct", "?")
     throttled = stats.get("throttled", False)
     throttle_str = "THROTTLED" if throttled else "ok"
 
