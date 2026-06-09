@@ -2,12 +2,16 @@
 """
 Réception flux H.264 UDP depuis Pi Zero (port 5600) via GStreamer.
 Inférence YOLOv8n sur chaque frame, exposition MJPEG annoté sur port 5601.
+Thread sideband UDP 5602 : reçoit JSON Pi Zero (résolution, fps, temp, CPU...)
+et affiche un overlay semi-transparent sur chaque frame.
 
 Fallback automatique vers webcam locale (cv2.VideoCapture(0)) si le flux
 UDP n'est pas disponible, pour tester sans le Pi Zero.
 """
 
 import argparse
+import json
+import socket
 import sys
 import threading
 import time
@@ -18,9 +22,10 @@ import numpy as np
 import cv2
 from ultralytics import YOLO
 
-MJPEG_PORT  = 5601
+MJPEG_PORT    = 5601
+SIDEBAND_PORT = 5602
 MJPEG_QUALITY = 70
-MODEL_PATH  = Path(__file__).parent / "yolov8n.pt"
+MODEL_PATH    = Path(__file__).parent / "yolov8n.pt"
 
 # Pipeline GStreamer : RTP H.264 UDP → BGR frames
 GSTREAMER_PIPELINE = (
@@ -34,9 +39,78 @@ GSTREAMER_PIPELINE = (
 )
 
 # Frame annotée partagée entre le thread de capture et le serveur MJPEG
-_frame_lock   = threading.Lock()
+_frame_lock    = threading.Lock()
 _current_frame = None
 _running       = True
+
+# Dernières stats Pi Zero reçues via UDP 5602 (thread-safe)
+_stats_lock = threading.Lock()
+_pi_stats: dict | None = None
+
+
+def sideband_loop() -> None:
+    """Écoute UDP 5602, stocke le dernier JSON Pi Zero dans _pi_stats."""
+    global _pi_stats
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.settimeout(1.0)
+    sock.bind(("0.0.0.0", SIDEBAND_PORT))
+    print(f"[SIDEBAND] Écoute UDP sur port {SIDEBAND_PORT}")
+    while _running:
+        try:
+            data, _ = sock.recvfrom(4096)
+            payload = json.loads(data.decode("utf-8"))
+            with _stats_lock:
+                _pi_stats = payload
+        except socket.timeout:
+            continue
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            print(f"[SIDEBAND] JSON invalide : {e}")
+    sock.close()
+    print("[SIDEBAND] Arrêt.")
+
+
+def draw_overlay(frame: np.ndarray) -> np.ndarray:
+    """Dessine l'overlay stats Pi Zero (fond noir semi-transparent) sur le frame."""
+    with _stats_lock:
+        stats = _pi_stats
+    if stats is None:
+        return frame
+
+    w_res   = stats.get("width", "?")
+    h_res   = stats.get("height", "?")
+    fps     = stats.get("fps", "?")
+    enc     = stats.get("encoder", "?")
+    temp    = stats.get("temp", "?")
+    cpu     = stats.get("cpu", "?")
+    throttled = stats.get("throttled", False)
+    throttle_str = "THROTTLED" if throttled else "ok"
+
+    line1 = f"{w_res}x{h_res} | {fps}fps | {enc} | {temp}C"
+    line2 = f"CPU {cpu}% | {throttle_str}"
+
+    font      = cv2.FONT_HERSHEY_SIMPLEX
+    scale     = 0.55
+    thickness = 1
+    margin    = 6
+
+    (tw1, th1), _ = cv2.getTextSize(line1, font, scale, thickness)
+    (tw2, th2), _ = cv2.getTextSize(line2, font, scale, thickness)
+    box_w = max(tw1, tw2) + margin * 2
+    box_h = th1 + th2 + margin * 3
+
+    # Copie pour ne pas altérer le frame original (réutilisé en mode synthétique)
+    out = frame.copy()
+    bg  = out.copy()
+    cv2.rectangle(bg, (0, 0), (box_w, box_h), (0, 0, 0), -1)
+    cv2.addWeighted(bg, 0.55, out, 0.45, 0, out)
+
+    cv2.putText(out, line1, (margin, margin + th1),
+                font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    cv2.putText(out, line2, (margin, margin * 2 + th1 + th2),
+                font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+    return out
 
 
 def _probe_gstreamer(result: list) -> None:
@@ -112,6 +186,9 @@ def capture_loop(model: YOLO) -> None:
         else:
             annotated = frame
 
+        # Overlay stats Pi Zero (ne modifie pas annotated en place)
+        annotated = draw_overlay(annotated)
+
         with _frame_lock:
             _current_frame = annotated
 
@@ -173,6 +250,10 @@ def main():
         # Mode flux brut : remplace l'inférence par une copie directe
         model = None
         print("[CAM] Mode flux brut (YOLOv8 désactivé)")
+
+    # Thread sideband : stats Pi Zero via UDP 5602
+    ts = threading.Thread(target=sideband_loop, daemon=True)
+    ts.start()
 
     # Thread de capture + inférence
     t = threading.Thread(target=capture_loop, args=(model,), daemon=True)
