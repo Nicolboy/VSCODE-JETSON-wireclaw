@@ -27,7 +27,7 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 - `.env` : secrets — NE JAMAIS MODIFIER NI COMMITTER
 - `start.sh` : lance ArduCopter + MAVProxy + WireClaw automatiquement
 - `sitl_params.parm` : paramètres SITL (batterie désactivée)
-- `receive_cam.py` : réception H.264 UDP port 5600 → MJPEG port 5601 (Pi Zero)
+- `receive_cam.py` : réception H.264 UDP port 5600 → inférence YOLOv8n → MJPEG annoté port 5601
 
 ## Ports réseau
 - 5760 TCP : ArduCopter ↔ MAVProxy
@@ -35,7 +35,7 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 - 14551 UDP : MAVSDK (WireClaw) + heartbeats ESP32
 - 14552 UDP : pymavlink (WireClaw)
 - 5600 UDP : flux H.264 RTP entrant depuis Pi Zero (caméra OV5647) — iptables ACCEPT persistant
-- 5601 TCP : MJPEG stream exposé par receive_cam.py (→ YOLOv8, interface web)
+- 5601 TCP : MJPEG annoté YOLOv8 exposé par receive_cam.py — iptables ACCEPT persistant
 
 ## Réseau local
 - Jetson Ethernet : 192.168.1.84
@@ -89,12 +89,12 @@ git add . && git commit -m "message" && git push origin master
 ## Prochaines étapes
 1. ~~Réception Pi Zero 2W + caméra OV5647~~ ✅ Pi Zero IP 192.168.1.132, reçu et testé
 2. Câblage UART ESP32 ↔ Pi Zero (GPIO17→GPIO15, GPIO16←GPIO14, GND)
-3. ~~Préparation réception flux H.264 UDP Jetson~~ ✅ receive_cam.py prêt, port 5600→5601
-4. Activer receive_cam.py quand Pi Zero remis en service (port 5600 UDP déjà ouvert iptables)
-5. Intégrer MJPEG 5601 dans l'interface web (flux vidéo + commandes)
-6. Matek H743 + ArduPilot réel (remplace SITL)
-7. SkyDroid C12 (caméra thermique + gimbal 3 axes, 117g)
-8. ~~YOLOv8 installé~~ ✅ ultralytics + torch 2.8 CUDA sur Orin — intégrer dans receive_cam.py
+3. ~~Préparation réception flux H.264 UDP Jetson~~ ✅ receive_cam.py opérationnel, MJPEG 5601 accessible
+4. ~~YOLOv8 intégré dans receive_cam.py~~ ✅ yolov8n.pt, CUDA Orin, mode synthétique actif en attendant Pi Zero
+5. **Prochaine étape : Pi Zero émet GStreamer UDP H.264 vers 192.168.1.84:5600**
+6. Intégrer MJPEG 5601 dans l'interface web (flux vidéo + commandes)
+7. Matek H743 + ArduPilot réel (remplace SITL)
+8. SkyDroid C12 (caméra thermique + gimbal 3 axes, 117g)
 9. Whisper local (transcription vocale)
 
 ## Gitea

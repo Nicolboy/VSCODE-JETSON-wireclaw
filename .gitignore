@@ -7,3 +7,5 @@ mav.parm
 eeprom.bin
 logs/
 terrain/
+*.pt
+*.onnx
