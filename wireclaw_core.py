@@ -84,9 +84,9 @@ async def monitor_armed(drone):
 
 async def drain_pymavlink():
     """Draine pymavlink en boucle pour peupler mav.messages (dernier msg par type)."""
-    loop = asyncio.get_running_loop()
     while True:
-        await loop.run_in_executor(None, lambda: mav.recv_match(blocking=False))
+        while mav.recv_match(blocking=False) is not None:
+            pass
         await asyncio.sleep(0.05)
 
 async def monitor_telemetry(drone):
