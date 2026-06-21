@@ -42,6 +42,13 @@ def init_pymavlink():
     global mav
     print("Connexion pymavlink sur 14552...")
     mav = mavutil.mavlink_connection(MAVLINK_PYMAV)
+    # Envoie un heartbeat pour signaler l'adresse de retour à mavp2p (udps ne connaît pas le client tant qu'il n'a pas émis)
+    mav.mav.heartbeat_send(
+        mavutil.mavlink.MAV_TYPE_GCS,
+        mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+        0, 0, 0
+    )
+    print("Heartbeat GCS envoyé à mavp2p (enregistrement adresse retour)")
     mav.wait_heartbeat()
     print("pymavlink connecte !")
 
