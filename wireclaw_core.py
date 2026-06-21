@@ -82,6 +82,13 @@ async def monitor_armed(drone):
         drone_armed = is_armed
         await asyncio.sleep(0)  # cède le contrôle après chaque mise à jour
 
+async def drain_pymavlink():
+    """Draine pymavlink en boucle pour peupler mav.messages (dernier msg par type)."""
+    loop = asyncio.get_running_loop()
+    while True:
+        await loop.run_in_executor(None, lambda: mav.recv_match(blocking=False))
+        await asyncio.sleep(0.05)
+
 async def monitor_telemetry(drone):
     """Sonde batterie, mode et GPS par polling — pause 1s entre chaque cycle
     pour ne pas saturer l'event loop asyncio avec des streams gRPC continus."""
@@ -91,7 +98,7 @@ async def monitor_telemetry(drone):
                 raw = bat.remaining_percent
                 telemetry_cache["battery"] = abs(raw) * 100 if abs(raw) <= 1 else abs(raw)
                 break
-            hb = mav.recv_match(type='HEARTBEAT', blocking=False)
+            hb = mav.messages.get('HEARTBEAT')
             if hb:
                 telemetry_cache["mode"] = ARDUCOPTER_MODES.get(hb.custom_mode, f"UNKNOWN({hb.custom_mode})")
             async for gps in drone.telemetry.gps_info():
@@ -280,6 +287,7 @@ async def init():
                 drone_armed = is_armed
                 print(f"Etat initial : {'arme' if drone_armed else 'desarme'}")
                 break
+            asyncio.create_task(drain_pymavlink())
             asyncio.create_task(monitor_armed(drone))
             asyncio.create_task(monitor_telemetry(drone))
             break
