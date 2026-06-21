@@ -32,6 +32,16 @@ Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 1 degre lat = 111320m, 1 degre lon = 111320*cos(lat)m
 """
 
+ARDUCOPTER_MODES = {
+    0: "STABILIZE", 1: "ACRO", 2: "ALT_HOLD", 3: "AUTO",
+    4: "GUIDED", 5: "LOITER", 6: "RTL", 7: "CIRCLE",
+    9: "LAND", 11: "DRIFT", 13: "SPORT", 14: "FLIP",
+    15: "AUTOTUNE", 16: "POSHOLD", 17: "BRAKE", 18: "THROW",
+    19: "AVOID_ADSB", 20: "GUIDED_NOGPS", 21: "SMART_RTL",
+    22: "FLOWHOLD", 23: "FOLLOW", 24: "ZIGZAG", 25: "SYSTEMID",
+    26: "AUTOROTATE", 27: "AUTO_RTL"
+}
+
 drone_armed = False
 current_pos = {"lat": BASE_LAT, "lon": BASE_LON, "alt": 0, "abs_alt": 584}
 telemetry_cache = {"battery": -1.0, "mode": "UNKNOWN", "gps_fix": "UNKNOWN", "gps_sats": 0}
@@ -81,9 +91,9 @@ async def monitor_telemetry(drone):
                 raw = bat.remaining_percent
                 telemetry_cache["battery"] = abs(raw) * 100 if abs(raw) <= 1 else abs(raw)
                 break
-            async for fm in drone.telemetry.flight_mode():
-                telemetry_cache["mode"] = str(fm)
-                break
+            hb = mav.recv_match(type='HEARTBEAT', blocking=False)
+            if hb:
+                telemetry_cache["mode"] = ARDUCOPTER_MODES.get(hb.custom_mode, f"UNKNOWN({hb.custom_mode})")
             async for gps in drone.telemetry.gps_info():
                 telemetry_cache["gps_fix"]  = str(gps.fix_type)
                 telemetry_cache["gps_sats"] = gps.num_satellites
