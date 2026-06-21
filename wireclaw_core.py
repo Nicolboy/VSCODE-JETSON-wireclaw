@@ -82,13 +82,6 @@ async def monitor_armed(drone):
         drone_armed = is_armed
         await asyncio.sleep(0)  # cède le contrôle après chaque mise à jour
 
-async def drain_pymavlink():
-    """Draine pymavlink en boucle pour peupler mav.messages (dernier msg par type)."""
-    while True:
-        while mav.recv_match(blocking=False) is not None:
-            pass
-        await asyncio.sleep(0.05)
-
 async def monitor_telemetry(drone):
     """Sonde batterie, mode et GPS par polling — pause 1s entre chaque cycle
     pour ne pas saturer l'event loop asyncio avec des streams gRPC continus."""
@@ -98,7 +91,13 @@ async def monitor_telemetry(drone):
                 raw = bat.remaining_percent
                 telemetry_cache["battery"] = abs(raw) * 100 if abs(raw) <= 1 else abs(raw)
                 break
-            hb = mav.messages.get('HEARTBEAT')
+            hb = None
+            while True:
+                msg = mav.recv_match(blocking=False)
+                if msg is None:
+                    break
+                if msg.get_type() == 'HEARTBEAT':
+                    hb = msg
             if hb:
                 telemetry_cache["mode"] = ARDUCOPTER_MODES.get(hb.custom_mode, f"UNKNOWN({hb.custom_mode})")
             async for gps in drone.telemetry.gps_info():
@@ -139,6 +138,15 @@ async def execute_command(drone, cmd):
 
     elif action == "status":
         await refresh_position(drone)
+        hb = None
+        while True:
+            m = mav.recv_match(blocking=False)
+            if m is None:
+                break
+            if m.get_type() == 'HEARTBEAT':
+                hb = m
+        if hb:
+            telemetry_cache["mode"] = ARDUCOPTER_MODES.get(hb.custom_mode, f"UNKNOWN({hb.custom_mode})")
         return (f"\nPosition : {current_pos['lat']:.6f}, {current_pos['lon']:.6f}\n"
                 f"Altitude  : {current_pos['alt']:.1f}m (AGL)\n"
                 f"Abs alt   : {current_pos['abs_alt']:.1f}m\n"
@@ -287,7 +295,6 @@ async def init():
                 drone_armed = is_armed
                 print(f"Etat initial : {'arme' if drone_armed else 'desarme'}")
                 break
-            asyncio.create_task(drain_pymavlink())
             asyncio.create_task(monitor_armed(drone))
             asyncio.create_task(monitor_telemetry(drone))
             break
