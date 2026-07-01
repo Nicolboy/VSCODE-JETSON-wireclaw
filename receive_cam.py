@@ -146,11 +146,11 @@ def open_capture() -> tuple[cv2.VideoCapture | None, str]:
     1. Flux GStreamer UDP 5600 (Pi Zero)
     2. Frame synthétique (pas de hardware)
     """
-    print("[CAM] Sonde flux GStreamer UDP 5600 (timeout 4 s)...")
+    print("[CAM] Sonde flux GStreamer UDP 5600 (timeout 15 s)...")
     result: list = []
     t = threading.Thread(target=_probe_gstreamer, args=(result,), daemon=True)
     t.start()
-    t.join(timeout=4)
+    t.join(timeout=15)
 
     if result:
         print("[CAM] Flux GStreamer UDP reçu.")
