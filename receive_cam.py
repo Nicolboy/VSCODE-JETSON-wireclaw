@@ -28,14 +28,20 @@ MJPEG_QUALITY = 70
 MODEL_PATH    = Path(__file__).parent / "yolov8n.pt"
 
 # Pipeline GStreamer : RTP H.264 UDP → BGR frames
+# Deux udpsrc (IPv4 0.0.0.0 + IPv6 ::) fusionnés par funnel : un socket IPv6 "::"
+# seul ne reçoit pas les paquets IPv4 sur ce Jetson (IPV6_V6ONLY actif, pas de
+# dual-stack), donc on écoute les deux familles en parallèle sur le même port.
+# IPv4 : réseau local Freebox (dev) — IPv6 : Mycelium (prod, 4G).
 GSTREAMER_PIPELINE = (
-    "udpsrc port=5600 "
+    "funnel name=f "
     "! application/x-rtp,payload=96 "
     "! rtph264depay "
     "! avdec_h264 "
     "! videoconvert "
     "! video/x-raw,format=BGR "
-    "! appsink drop=true max-buffers=1"
+    "! appsink drop=true max-buffers=1 "
+    "udpsrc address=0.0.0.0 port=5600 ! f. "
+    "udpsrc address=:: port=5600 ! f."
 )
 
 # Frame annotée partagée entre le thread de capture et le serveur MJPEG
