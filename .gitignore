@@ -9,3 +9,4 @@ logs/
 terrain/
 *.pt
 *.onnx
+*.bak

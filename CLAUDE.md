@@ -34,8 +34,9 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 - 14550 UDP : MAVProxy output standard + ESP32 source
 - 14551 UDP : MAVSDK (WireClaw) + heartbeats ESP32
 - 14552 UDP : pymavlink (WireClaw)
-- 5600 UDP : flux H.264 RTP entrant depuis Pi Zero (caméra OV5647) — iptables ACCEPT persistant
-- 5601 TCP : MJPEG annoté YOLOv8 exposé par receive_cam.py — iptables ACCEPT persistant
+- 5600 UDP : flux H.264 RTP entrant depuis Pi Zero (caméra OV5647) — ouvert via `ufw allow 5600/udp` (2026-07-18, précaution). Fonctionne aujourd'hui via un relais loopback (`wfb-ng`/`wfb_rx` réinjecte le flux décodé sur `127.0.0.1:5600`), qui contourne de fait le filtrage sur l'interface externe : dépendance fragile, à surveiller si le pipeline de réception change (ex. flux direct depuis `gs-wfb` sans relais loopback)
+- 5601 TCP : MJPEG annoté YOLOv8 exposé par receive_cam.py — ouvert via `ufw allow` (règle `5601/tcp`)
+- 5602 UDP : sideband stats Pi Zero (résolution, fps, temp, CPU) vers receive_cam.py, via tunnel WFB-NG (`10.5.0.2` → `10.5.0.1` sur l'interface `gs-wfb`) — ouvert via `ufw allow 5602/udp` (2026-07-18). **Ce port était resté fermé par défaut (policy DROP d'ufw) alors que le code sideband existait depuis un moment** : l'overlay stats semblait "figé" ou absent car les paquets réels du Pi Zero étaient droppés par le pare-feu avant d'atteindre le socket applicatif, malgré un socket/threading fonctionnels par ailleurs (`tcpdump` voit toujours le trafic sur l'interface, quel que soit son sort côté netfilter — ne pas se fier à `tcpdump` seul pour valider qu'un flux atteint l'appli)
 
 ## Réseau local
 - Jetson Ethernet : 192.168.1.84
