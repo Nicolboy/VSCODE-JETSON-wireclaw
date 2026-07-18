@@ -63,13 +63,13 @@ _pi_stats: dict | None = None
 def sideband_loop() -> None:
     """Écoute UDP 5602, stocke le dernier JSON Pi Zero dans _pi_stats."""
     global _pi_stats
-    # AF_INET6 + V6ONLY=0 : socket dual-stack qui accepte l'IPv4 (Freebox, dev)
-    # et l'IPv6 (Mycelium, prod) sur le même port sans dupliquer le socket.
-    sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    # Liaison point à point exclusivement IPv4 (tunnel WFB-NG) — plus de
+    # dual-stack IPv6/Mycelium, qui ne recevait pas fiablement le trafic
+    # provenant de l'interface tunnel point-à-point.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
     sock.settimeout(1.0)
-    sock.bind(("::", SIDEBAND_PORT))
+    sock.bind(("0.0.0.0", SIDEBAND_PORT))
     print(f"[SIDEBAND] Écoute UDP sur port {SIDEBAND_PORT}")
     while _running:
         try:
