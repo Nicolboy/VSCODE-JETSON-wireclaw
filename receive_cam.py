@@ -15,7 +15,7 @@ import socket
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
@@ -287,7 +287,7 @@ def main():
     t = threading.Thread(target=capture_loop, args=(model,), daemon=True)
     t.start()
 
-    server = HTTPServer(("0.0.0.0", MJPEG_PORT), MJPEGHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", MJPEG_PORT), MJPEGHandler)
     print(f"[CAM] MJPEG stream sur http://0.0.0.0:{MJPEG_PORT}/")
     print(f"[CAM] Ouvrir dans un navigateur ou VLC : http://192.168.1.84:{MJPEG_PORT}/")
 
