@@ -59,6 +59,11 @@ _active_source  = "synthetic"
 _stats_lock = threading.Lock()
 _pi_stats: dict | None = None
 
+# RSSI du flux vidéo dédié WFB-NG reçu via API JSON 127.0.0.1:8103
+_rssi_lock = threading.Lock()
+_rssi_data: dict | None = None  # {"rssi_avg": -63, "snr_avg": 17}
+RSSI_API_PORT = 8103
+
 
 def sideband_loop() -> None:
     """Écoute UDP 5602, stocke le dernier JSON Pi Zero dans _pi_stats."""
@@ -83,6 +88,111 @@ def sideband_loop() -> None:
             print(f"[SIDEBAND] JSON invalide : {e}")
     sock.close()
     print("[SIDEBAND] Arrêt.")
+
+
+def rssi_loop() -> None:
+    """Écoute l'API JSON wfb-ng locale (127.0.0.1:8103), extrait le RSSI
+    du flux vidéo dédié (id="video rx") et le stocke pour l'overlay.
+    Reconnexion automatique en cas de coupure (wfb-server-gs redémarré)."""
+    global _rssi_data
+    buf = ""
+    while _running:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2.0)
+            sock.connect(("127.0.0.1", RSSI_API_PORT))
+            print(f"[RSSI] Connecté à l'API wfb-ng (port {RSSI_API_PORT})")
+            while _running:
+                chunk = sock.recv(8192).decode("utf-8", errors="ignore")
+                if not chunk:
+                    break
+                buf += chunk
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    if not line.strip():
+                        continue
+                    try:
+                        d = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if d.get("id") == "video rx":
+                        ants = d.get("rx_ant_stats") or []
+                        if ants:
+                            rssi_avg = sum(a.get("rssi_avg", -80) for a in ants) / len(ants)
+                            snr_avg = sum(a.get("snr_avg", 0) for a in ants) / len(ants)
+                            with _rssi_lock:
+                                _rssi_data = {"rssi_avg": rssi_avg, "snr_avg": snr_avg}
+            sock.close()
+        except (ConnectionRefusedError, OSError, socket.timeout):
+            with _rssi_lock:
+                _rssi_data = None
+            time.sleep(2)
+
+
+def draw_rssi_pyramid(frame: np.ndarray) -> np.ndarray:
+    """Pyramide inversée (base large en haut, pointe en bas), 10 segments,
+    remplissage proportionnel au RSSI, code couleur vert/jaune/rouge.
+    Positionnée en haut à droite du frame."""
+    with _rssi_lock:
+        rssi = _rssi_data
+
+    h, w = frame.shape[:2]
+    N = 10
+    pyr_w = 70
+    pyr_h = 90
+    gap = 2
+    margin_top = 10
+    margin_right = 10
+    x_center = w - margin_right - pyr_w // 2
+    y_top = margin_top
+
+    out = frame
+
+    if rssi is None:
+        fill_count = 0
+        color = (128, 128, 128)
+    else:
+        rssi_val = rssi["rssi_avg"]
+        fill_ratio = max(0.0, min(1.0, (rssi_val + 75) / 25))
+        fill_count = round(fill_ratio * N)
+        if rssi_val >= -60:
+            color = (0, 200, 0)
+        elif rssi_val >= -70:
+            color = (0, 220, 220)
+        else:
+            color = (0, 0, 220)
+
+    row_h = (pyr_h - gap * (N - 1)) / N
+
+    for i in range(N):
+        y0 = y_top + i * (row_h + gap)
+        y1 = y0 + row_h
+        top_frac = 1 - i / N
+        bot_frac = 1 - (i + 1) / N
+        top_half_w = (pyr_w / 2) * top_frac
+        bot_half_w = (pyr_w / 2) * bot_frac
+
+        pts = np.array([
+            [x_center - top_half_w, y0],
+            [x_center + top_half_w, y0],
+            [x_center + bot_half_w, y1],
+            [x_center - bot_half_w, y1],
+        ], dtype=np.int32)
+
+        filled = i < fill_count
+        seg_color = color if filled else (60, 60, 60)
+        cv2.fillConvexPoly(out, pts, seg_color, cv2.LINE_AA)
+        cv2.polylines(out, [pts], True, (20, 20, 20), 1, cv2.LINE_AA)
+
+    if rssi is not None:
+        label = f"{rssi['rssi_avg']:.0f}dBm"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        (tw, th), _ = cv2.getTextSize(label, font, 0.45, 1)
+        tx = x_center - tw // 2
+        ty = y_top + pyr_h + th + 4
+        cv2.putText(out, label, (tx, ty), font, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+    return out
 
 
 def draw_overlay(frame: np.ndarray) -> np.ndarray:
@@ -212,6 +322,9 @@ def capture_loop(model: YOLO) -> None:
         # Overlay stats Pi Zero (ne modifie pas annotated en place)
         annotated = draw_overlay(annotated)
 
+        # Overlay RSSI pyramide inversée
+        annotated = draw_rssi_pyramid(annotated)
+
         with _frame_lock:
             _current_frame = annotated
 
@@ -278,6 +391,10 @@ def main():
     # Thread sideband : stats Pi Zero via UDP 5602
     ts = threading.Thread(target=sideband_loop, daemon=True)
     ts.start()
+
+    # Thread RSSI : lecture API JSON wfb-ng pour l'overlay pyramide inversée
+    tr = threading.Thread(target=rssi_loop, daemon=True)
+    tr.start()
 
     # Thread de fond : connexion/reconnexion continue au flux GStreamer réel
     tg = threading.Thread(target=gstreamer_watcher, daemon=True)
