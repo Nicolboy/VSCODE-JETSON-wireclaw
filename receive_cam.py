@@ -137,11 +137,11 @@ def draw_rssi_pyramid(frame: np.ndarray) -> np.ndarray:
         rssi = _rssi_data
 
     h, w = frame.shape[:2]
-    N = 10
+    N = 6
     pyr_w = 70
-    pyr_h = 90
+    pyr_h = 54
     gap = 2
-    margin_top = 10
+    margin_top = 6
     margin_right = 10
     x_center = w - margin_right - pyr_w // 2
     y_top = margin_top
