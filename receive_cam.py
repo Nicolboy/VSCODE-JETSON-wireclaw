@@ -10,6 +10,7 @@ UDP n'est pas disponible, pour tester sans le Pi Zero.
 """
 
 import argparse
+import gc
 import json
 import socket
 import sys
@@ -379,6 +380,9 @@ class MJPEGHandler(BaseHTTPRequestHandler):
 def main():
     global _running
 
+    gc.disable()
+    print("[CAM] GC automatique désactivé pour éviter les pauses.")
+
     parser = argparse.ArgumentParser(description="WireClaw — réception caméra + YOLOv8")
     parser.add_argument("--no-yolo", action="store_true", help="Désactiver l'inférence YOLOv8 (flux brut)")
     args = parser.parse_args()
@@ -418,6 +422,8 @@ def main():
     finally:
         _running = False
         server.shutdown()
+        gc.enable()
+        gc.collect()
         print("[CAM] Arrêt.")
 
 
