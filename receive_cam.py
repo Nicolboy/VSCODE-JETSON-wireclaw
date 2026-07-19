@@ -138,11 +138,12 @@ def draw_rssi_pyramid(frame: np.ndarray) -> np.ndarray:
 
     h, w = frame.shape[:2]
     N = 6
-    pyr_w = 70
+    pyr_w = 49
     pyr_h = 54
     gap = 2
     margin_top = 6
     margin_right = 10
+    min_bottom_ratio = 0.35
     x_center = w - margin_right - pyr_w // 2
     y_top = margin_top
 
@@ -168,7 +169,9 @@ def draw_rssi_pyramid(frame: np.ndarray) -> np.ndarray:
         y0 = y_top + i * (row_h + gap)
         y1 = y0 + row_h
         top_frac = 1 - i / N
-        bot_frac = 1 - (i + 1) / N
+        bot_frac = max(min_bottom_ratio, 1 - (i + 1) / N)
+        if i == N - 1:
+            top_frac = max(min_bottom_ratio, top_frac)
         top_half_w = (pyr_w / 2) * top_frac
         bot_half_w = (pyr_w / 2) * bot_frac
 
@@ -179,7 +182,7 @@ def draw_rssi_pyramid(frame: np.ndarray) -> np.ndarray:
             [x_center - bot_half_w, y1],
         ], dtype=np.int32)
 
-        filled = i < fill_count
+        filled = i >= (N - fill_count)
         seg_color = color if filled else (60, 60, 60)
         cv2.fillConvexPoly(out, pts, seg_color, cv2.LINE_AA)
         cv2.polylines(out, [pts], True, (20, 20, 20), 1, cv2.LINE_AA)
