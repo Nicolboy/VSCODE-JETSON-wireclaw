@@ -219,10 +219,11 @@ def draw_overlay(frame: np.ndarray) -> np.ndarray:
     temp    = stats.get("temp_c", "?")
     cpu     = stats.get("cpu_pct", "?")
     throttled = stats.get("throttled", False)
-    throttle_str = "THROTTLED" if throttled else "ok"
 
     line1 = f"{w_res}x{h_res} | {fps}fps | {enc} | {temp}C"
-    line2 = f"CPU {cpu}% | {throttle_str} | {_band_label}"
+    line2 = f"CPU {cpu}% | {_band_label}"
+    if throttled:
+        line2 += " | THROTTLED"
 
     font      = cv2.FONT_HERSHEY_SIMPLEX
     scale     = 0.55
