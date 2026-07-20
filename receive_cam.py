@@ -91,23 +91,27 @@ def sideband_loop() -> None:
     print("[SIDEBAND] Arrêt.")
 
 
-def read_band_label() -> str:
-    """Lit wifi_channel depuis /etc/wifibroadcast.cfg (local, fichier
-    système) pour déterminer la bande. Lu une seule fois au démarrage
-    — la bande ne change qu'via switch_band.sh, qui redémarre ce
-    service de toute façon."""
-    try:
-        with open("/etc/wifibroadcast.cfg") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("wifi_channel"):
-                    # ex: "wifi_channel = 6     # commentaire"
-                    val = line.split("=", 1)[1].split("#")[0].strip()
-                    ch = int(val)
-                    return "2.4GHz" if ch <= 14 else "5GHz"
-    except (FileNotFoundError, ValueError, IndexError) as e:
-        print(f"[BAND] Impossible de lire wifi_channel : {e}")
-    return "?"
+def band_label_loop() -> None:
+    """Relit /etc/wifibroadcast.cfg toutes les 10s pour détecter un
+    changement de bande (ex: après switch_band.sh) sans jamais avoir
+    besoin de redémarrer ce service."""
+    global _band_label
+    while _running:
+        try:
+            with open("/etc/wifibroadcast.cfg") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("wifi_channel"):
+                        val = line.split("=", 1)[1].split("#")[0].strip()
+                        ch = int(val)
+                        new_label = "2.4GHz" if ch <= 14 else "5GHz"
+                        if new_label != _band_label:
+                            print(f"[BAND] Changement détecté : {_band_label} -> {new_label}")
+                            _band_label = new_label
+                        break
+        except (FileNotFoundError, ValueError, IndexError) as e:
+            print(f"[BAND] Impossible de lire wifi_channel : {e}")
+        time.sleep(10)
 
 
 def rssi_loop() -> None:
@@ -399,11 +403,7 @@ class MJPEGHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    global _running, _band_label
-
-    # Détecte la bande radio au démarrage (depuis le fichier système)
-    _band_label = read_band_label()
-    print(f"[BAND] Bande détectée : {_band_label}")
+    global _running
 
     parser = argparse.ArgumentParser(description="WireClaw — réception caméra + YOLOv8")
     parser.add_argument("--no-yolo", action="store_true", help="Désactiver l'inférence YOLOv8 (flux brut)")
@@ -424,6 +424,10 @@ def main():
     # Thread RSSI : lecture API JSON wfb-ng pour l'overlay pyramide inversée
     tr = threading.Thread(target=rssi_loop, daemon=True)
     tr.start()
+
+    # Thread bande : relit wifi_channel toutes les 10s pour détecter les changements
+    tb = threading.Thread(target=band_label_loop, daemon=True)
+    tb.start()
 
     # Thread de fond : connexion/reconnexion continue au flux GStreamer réel
     tg = threading.Thread(target=gstreamer_watcher, daemon=True)
