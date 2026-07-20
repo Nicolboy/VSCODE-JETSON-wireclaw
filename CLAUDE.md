@@ -11,6 +11,31 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 - **Pi Zero 2W** : IP 192.168.1.132 — flux vidéo H.264 UDP → Jetson (câblé, arrêté pour l'instant)
 - **Matek H743** : à venir — contrôleur de vol ArduPilot réel
 
+## Renommage du dossier (20 juillet 2026)
+
+Ce dossier s'appelait `~/wireclaw`, renommé en `~/wireclaw-jetson` pour clarté : le repo `wireclaw-pizero` (config du drone) est maintenant aussi cloné localement sur le Jetson (voir ci-dessous), donc les deux noms de dossier doivent être distincts.
+
+**Le dépôt distant Gitea reste `wireclaw.git`** (inchangé) — seul le nom du dossier local sur le Jetson a changé. Ne pas confondre les deux : `git remote -v` continuera d'afficher `wireclaw.git`, c'est normal.
+
+Services systemd mis à jour en conséquence (`WorkingDirectory`/`ExecStart` pointent vers `/home/nicoboy/wireclaw-jetson`) :
+- `wireclaw.service` (tests SITL ArduPilot, carte MAV+GPS)
+- `receive-cam.service` (réception vidéo/YOLO/MJPEG)
+
+## Organisation des deux repos sur le Jetson
+
+Depuis le 20 juillet 2026, les deux dépôts du projet sont clonés localement sur le Jetson, pour permettre au script `switch_band.sh` (voir ci-dessous) de lire les deux profils de config radio sans dépendre du réseau vers un PC distant :
+
+- `~/wireclaw-jetson/` — ce repo, code Jetson (réception vidéo, config radio ground station)
+- `~/wireclaw-pizero/` — code Pi Zero (émission caméra, config radio drone). **Ce repo reste normalement édité depuis le PC habituel** — le clone Jetson sert uniquement de source pour le déploiement des profils radio, pas de zone d'édition principale. Toujours faire `git pull` avant toute édition, où que ce soit, pour éviter une divergence entre les deux clones.
+
+## Profils radio versionnés (5GHz / 2.4GHz)
+
+Deux profils complets et testés existent dans `config/` de chaque repo :
+- `wifibroadcast_gs_5ghz.cfg` / `wifibroadcast_drone_5ghz.cfg` — canal 149, bande opérationnelle par défaut du projet
+- `wifibroadcast_gs_24ghz.cfg` / `wifibroadcast_drone_24ghz.cfg` — canal 6, **usage diagnostic/comparatif uniquement** : confirmé sujet à interférence domestique sévère (freeze disparaît en mode auto Freebox, revient sur canal chevauchant — cf 20260720_wireclaw_avancement_v17.md §6)
+
+Bascule via `scripts/switch_band.sh 5ghz` ou `scripts/switch_band.sh 2.4ghz` (voir le script pour le détail — copie directe des profils, pas de patch, backup unique `.bak_last` écrasé à chaque bascule).
+
 ## Stack logicielle
 - Python 3.10, asyncio
 - MAVSDK Python (udp://:14551)
