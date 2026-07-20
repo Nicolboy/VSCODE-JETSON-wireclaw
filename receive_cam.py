@@ -91,12 +91,30 @@ def sideband_loop() -> None:
     print("[SIDEBAND] Arrêt.")
 
 
+def read_band_label() -> str:
+    """Lit wifi_channel depuis /etc/wifibroadcast.cfg (local, fichier
+    système) pour déterminer la bande. Lu une seule fois au démarrage
+    — la bande ne change qu'via switch_band.sh, qui redémarre ce
+    service de toute façon."""
+    try:
+        with open("/etc/wifibroadcast.cfg") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("wifi_channel"):
+                    # ex: "wifi_channel = 6     # commentaire"
+                    val = line.split("=", 1)[1].split("#")[0].strip()
+                    ch = int(val)
+                    return "2.4GHz" if ch <= 14 else "5GHz"
+    except (FileNotFoundError, ValueError, IndexError) as e:
+        print(f"[BAND] Impossible de lire wifi_channel : {e}")
+    return "?"
+
+
 def rssi_loop() -> None:
     """Écoute l'API JSON wfb-ng locale (127.0.0.1:8103), extrait le RSSI
     du flux vidéo dédié (id="video rx") et le stocke pour l'overlay.
-    Capture aussi wifi_channel au démarrage pour afficher la bande.
     Reconnexion automatique en cas de coupure (wfb-server-gs redémarré)."""
-    global _rssi_data, _band_label
+    global _rssi_data
     buf = ""
     while _running:
         try:
@@ -117,10 +135,6 @@ def rssi_loop() -> None:
                         d = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    # Capture wifi_channel au démarrage (dans le message "settings")
-                    if "common" in d and "wifi_channel" in d["common"]:
-                        ch = d["common"]["wifi_channel"]
-                        _band_label = "2.4GHz" if ch <= 14 else "5GHz"
                     if d.get("id") == "video rx":
                         ants = d.get("rx_ant_stats") or []
                         if ants:
@@ -385,7 +399,11 @@ class MJPEGHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    global _running
+    global _running, _band_label
+
+    # Détecte la bande radio au démarrage (depuis le fichier système)
+    _band_label = read_band_label()
+    print(f"[BAND] Bande détectée : {_band_label}")
 
     parser = argparse.ArgumentParser(description="WireClaw — réception caméra + YOLOv8")
     parser.add_argument("--no-yolo", action="store_true", help="Désactiver l'inférence YOLOv8 (flux brut)")
