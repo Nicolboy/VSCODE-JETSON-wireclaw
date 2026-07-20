@@ -62,6 +62,7 @@ _pi_stats: dict | None = None
 # RSSI du flux vidéo dédié WFB-NG reçu via API JSON 127.0.0.1:8103
 _rssi_lock = threading.Lock()
 _rssi_data: dict | None = None  # {"rssi_avg": -63, "snr_avg": 17}
+_band_label: str = "?"  # "2.4GHz" ou "5GHz", déterminé au démarrage
 RSSI_API_PORT = 8103
 
 
@@ -93,8 +94,9 @@ def sideband_loop() -> None:
 def rssi_loop() -> None:
     """Écoute l'API JSON wfb-ng locale (127.0.0.1:8103), extrait le RSSI
     du flux vidéo dédié (id="video rx") et le stocke pour l'overlay.
+    Capture aussi wifi_channel au démarrage pour afficher la bande.
     Reconnexion automatique en cas de coupure (wfb-server-gs redémarré)."""
-    global _rssi_data
+    global _rssi_data, _band_label
     buf = ""
     while _running:
         try:
@@ -115,6 +117,10 @@ def rssi_loop() -> None:
                         d = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    # Capture wifi_channel au démarrage (dans le message "settings")
+                    if "common" in d and "wifi_channel" in d["common"]:
+                        ch = d["common"]["wifi_channel"]
+                        _band_label = "2.4GHz" if ch <= 14 else "5GHz"
                     if d.get("id") == "video rx":
                         ants = d.get("rx_ant_stats") or []
                         if ants:
@@ -200,6 +206,7 @@ def draw_rssi_pyramid(frame: np.ndarray) -> np.ndarray:
 
 def draw_overlay(frame: np.ndarray) -> np.ndarray:
     """Dessine l'overlay stats Pi Zero (fond noir semi-transparent) sur le frame."""
+    global _band_label
     with _stats_lock:
         stats = _pi_stats
     if stats is None:
@@ -215,7 +222,7 @@ def draw_overlay(frame: np.ndarray) -> np.ndarray:
     throttle_str = "THROTTLED" if throttled else "ok"
 
     line1 = f"{w_res}x{h_res} | {fps}fps | {enc} | {temp}C"
-    line2 = f"CPU {cpu}% | {throttle_str}"
+    line2 = f"CPU {cpu}% | {throttle_str} | {_band_label}"
 
     font      = cv2.FONT_HERSHEY_SIMPLEX
     scale     = 0.55
