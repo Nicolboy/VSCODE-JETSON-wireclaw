@@ -24,7 +24,7 @@ echo "Lancement ArduCopter..."
     --model + \
     --speedup 1 \
     --sim-address=127.0.0.1 \
-    --defaults /home/nicoboy/wireclaw/sitl_params.parm \
+    --defaults /home/nicoboy/wireclaw-jetson/sitl_params.parm \
     > /tmp/arducopter.log 2>&1 &
 sleep 3
 
@@ -65,5 +65,5 @@ sleep 2
 
 # 5. Lancer WireClaw
 echo "Lancement WireClaw..."
-cd ~/wireclaw
+cd ~/wireclaw-jetson
 /home/nicoboy/.local/bin/uvicorn web_server:app --host 0.0.0.0 --port 8765

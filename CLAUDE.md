@@ -45,7 +45,7 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 
 ## Règles importantes
 - Ne jamais modifier `.env` ni `credentials.h` (secrets WiFi/API)
-- Toujours tester via `~/wireclaw/start.sh` avant de commiter
+- Toujours tester via `~/wireclaw-jetson/start.sh` avant de commiter
 - Les commandes MAVLink passent toutes par `execute_command()` dans wireclaw_core.py
 - L'état armement est synchronisé en temps réel via `monitor_armed()` (tâche de fond)
 - `MAV_CMD_DO_ORBIT` (commande 34) non supportée en SITL → fallback waypoints circulaires 16 points
@@ -54,7 +54,7 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 ## Commandes de session
 ```bash
 # Démarrer tout
-~/wireclaw/start.sh
+~/wireclaw-jetson/start.sh
 
 # Vérifier SITL actif
 ps aux | grep -E "arducopter|mavproxy" | grep -v grep
@@ -66,7 +66,7 @@ nmcli dev status | grep wifi
 pkill -f hermes
 
 # Lancer la réception caméra Pi Zero (quand Pi Zero actif)
-python3 ~/wireclaw/receive_cam.py
+python3 ~/wireclaw-jetson/receive_cam.py
 
 # Vérifier MJPEG stream caméra
 curl -s --max-time 2 http://localhost:5601/ | head -1
