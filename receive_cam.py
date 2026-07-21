@@ -25,7 +25,7 @@ from ultralytics import YOLO
 MJPEG_PORT    = 5601
 SIDEBAND_PORT = 5602
 MJPEG_QUALITY = 70
-MODEL_PATH    = Path(__file__).parent / "yolov8n.pt"
+MODEL_PATH    = Path(__file__).parent / "yolov8n.engine"
 
 # Pipeline GStreamer : RTP H.264 UDP → BGR frames
 # Deux udpsrc (IPv4 0.0.0.0 + IPv6 ::) fusionnés par funnel : un socket IPv6 "::"
