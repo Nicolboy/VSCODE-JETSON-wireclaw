@@ -2,6 +2,12 @@
 
 echo "=== WireClaw Startup ==="
 
+# Charge les secrets (mot de passe hotspot) depuis .env, jamais versionne
+cd "$(dirname "$0")"
+set -a
+[ -f .env ] && source .env
+set +a
+
 # 1. Nettoyage
 echo "Nettoyage..."
 pkill -f "hermes" 2>/dev/null
@@ -15,7 +21,7 @@ sudo fuser -k 14550/udp 14551/udp 14552/udp 2>/dev/null
 sleep 1
 # Créer le hotspot WiFi drone
 echo "Démarrage hotspot WireClaw..."
-sudo nmcli dev wifi hotspot ifname wlP1p1s0 ssid "WireClaw" password "REDACTED_WIFI_PASSWORD"
+sudo nmcli dev wifi hotspot ifname wlP1p1s0 ssid "WireClaw" password "$WIFI_HOTSPOT_PASSWORD"
 sleep 3
 
 # 2. Lancer ArduCopter SITL directement

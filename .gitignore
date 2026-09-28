@@ -10,3 +10,5 @@ terrain/
 *.pt
 *.onnx
 *.bak
+.aider*
+*.engine
