@@ -15,7 +15,7 @@ un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 
 Ce dossier s'appelait `~/wireclaw`, renommé en `~/wireclaw-jetson` pour clarté : le repo `wireclaw-pizero` (config du drone) est maintenant aussi cloné localement sur le Jetson (voir ci-dessous), donc les deux noms de dossier doivent être distincts.
 
-**Le dépôt distant Gitea reste `wireclaw.git`** (inchangé) — seul le nom du dossier local sur le Jetson a changé. Ne pas confondre les deux : `git remote -v` continuera d'afficher `wireclaw.git`, c'est normal.
+Gitea (`git.syoul.fr`) a été mis hors service — le dépôt distant est désormais sur GitHub (`VSCODE-JETSON-wireclaw`, compte Nicolboy). Seul le nom du dossier local sur le Jetson a changé lors du renommage ci-dessus ; le nom du dépôt distant a changé séparément, plus tard, lors du passage à GitHub.
 
 Services systemd mis à jour en conséquence (`WorkingDirectory`/`ExecStart` pointent vers `/home/nicoboy/wireclaw-jetson`) :
 - `wireclaw.service` (tests SITL ArduPilot, carte MAV+GPS)
@@ -100,7 +100,7 @@ curl -s --max-time 2 http://localhost:5601/ | head -1
 gst-launch-1.0 udpsrc port=5600 ! application/x-rtp,payload=96 ! rtph264depay ! avdec_h264 ! videoconvert ! fakesink
 
 # Git commit + push
-git add . && git commit -m "message" && git push origin master
+git add . && git commit -m "message" && git push origin main
 ```
 
 ## Commandes WireClaw validées
@@ -123,6 +123,8 @@ git add . && git commit -m "message" && git push origin master
 8. SkyDroid C12 (caméra thermique + gimbal 3 axes, 117g)
 9. Whisper local (transcription vocale)
 
-## Gitea
-- WireClaw Python : git.syoul.fr/nicoboy/wireclaw
-- Firmware ESP32 : git.syoul.fr/nicoboy/wireclaw-esp32
+## Dépôts GitHub (compte Nicolboy)
+- WireClaw Python (ce dépôt) : VSCODE-JETSON-wireclaw
+- Alimentation HT ESP32-C3 (projet lié, non-WireClaw) : VSCODE-ESP32-hv-boost
+
+Gitea (`git.syoul.fr`) est hors service depuis fin septembre 2026 ; tout le suivi de version se fait désormais sur GitHub.
