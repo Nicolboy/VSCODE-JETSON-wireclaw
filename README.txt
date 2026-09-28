@@ -1,1 +1,0 @@
-piloter une esp 32 par des commandes texte et vocales via wifi - pilotage de drones
