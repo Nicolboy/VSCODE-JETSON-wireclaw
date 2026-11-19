@@ -1,0 +1,12 @@
+[Unit]
+Description=WFB-NG server (ground station)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/wfb-server --profiles gs --wlans wlx54c9ff02f26e
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

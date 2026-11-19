@@ -1,0 +1,15 @@
+[Unit]
+Description=WireClaw receive_cam.py (YOLOv8 + overlay MJPEG)
+After=network-online.target wfb-server-gs.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nicoboy
+WorkingDirectory=/home/nicoboy/wireclaw-jetson
+ExecStart=/usr/bin/python3 /home/nicoboy/wireclaw-jetson/receive_cam.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
