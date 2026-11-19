@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WireClaw — Test chaîne vocale</title>
+<title>WireClaw — Commande vocale</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -125,8 +125,8 @@
 </style>
 </head>
 <body>
-  <h1>WIRECLAW — TEST CHAÎNE VOCALE</h1>
-  <div class="subtitle">Validation micro → transcription (LFM3-audio) · texte → commande (LFM3) · variables de navigation (SITL)</div>
+  <h1>WIRECLAW — COMMANDE VOCALE</h1>
+  <div class="subtitle">Pilotage reel du drone (voix/texte, LFM3) — les actions critiques demandent une confirmation · variables de navigation (SITL)</div>
 
   <div class="grid">
     <div>
@@ -162,9 +162,9 @@
     </div>
 
     <div>
-      <!-- Commande interprétée -->
+      <!-- Resultat de la commande -->
       <div class="panel">
-        <h2>Commande interprétée (LFM3)</h2>
+        <h2>Résultat de la commande</h2>
         <pre class="result empty" id="command-result">(aucune commande encore)</pre>
       </div>
 
@@ -318,17 +318,45 @@ async function interpret(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text })
     });
-    const data = await r.json();
-    if (data.error) {
-      box.className = 'result error';
-      box.textContent = data.error + (data.raw ? '\n\nBrut : ' + data.raw : '');
-    } else {
-      box.textContent = JSON.stringify(data.command, null, 2);
-    }
+    renderCommandResult(box, await r.json());
   } catch (e) {
     box.className = 'result error';
     box.textContent = 'Erreur réseau : ' + e;
   }
+}
+
+function renderCommandResult(box, data) {
+  if (data.status === 'pending') {
+    box.className = 'result';
+    box.innerHTML = esc(data.message) +
+      '<br><button class="btn-main" style="margin-top:10px;">Confirmer</button>';
+    box.querySelector('button').addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      btn.textContent = 'Envoi...';
+      try {
+        const r = await fetch(`${API}/interpret/confirm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: data.token })
+        });
+        renderCommandResult(box, await r.json());
+      } catch (e) {
+        box.className = 'result error';
+        box.textContent = 'Erreur réseau : ' + e;
+      }
+    });
+  } else if (data.status === 'rejected' || data.status === 'error' || data.error) {
+    box.className = 'result error';
+    box.textContent = data.message ?? data.error ?? 'Erreur';
+  } else {
+    box.className = 'result';
+    box.textContent = data.message ?? 'OK';
+  }
+}
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /* ---------- Variables de navigation (polling) ---------- */

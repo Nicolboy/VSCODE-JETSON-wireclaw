@@ -1,11 +1,14 @@
 """
-Backend de test pour la chaine voix/texte -> commande WireClaw.
+Pont voix/texte -> commande WireClaw, pilotage reel du drone.
 
-Objectif : valider micro->transcription (lfm3-audio) et texte->commande JSON
-(lfm3, meme schema que wireclaw_core.py) independamment de Gemini (API key
-invalide actuellement) et sans dependre du reste du pipeline de production.
+Transcription audio geree ici (lfm3-audio, independant du reste). Pour
+l'interpretation et l'execution, aucune logique propre : tout passe par
+l'API de wireclaw.service (port 8765), qui fait interpretation LFM3 +
+validation en dur + confirmation pour les actions critiques
+(wireclaw_core.py). Ne jamais dupliquer ce pipeline ici — c'est le seul
+filet contre une hallucination du LLM, le dupliquer reviendrait a le
+contourner par un deuxieme chemin non protege.
 """
-import json
 import os
 import re
 import subprocess
@@ -16,8 +19,7 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-OLLAMA_URL = "http://127.0.0.1:11434"
-WIRECLAW_STATUS_URL = "http://127.0.0.1:8765/status"
+WIRECLAW_URL = "http://127.0.0.1:8765"
 
 app = FastAPI()
 app.add_middleware(
@@ -27,55 +29,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Meme schema de commande que wireclaw_core.py (SYSTEM_PROMPT), adapte pour LFM3.
-SYSTEM_PROMPT = """Tu es WireClaw, cerveau d'un drone d'inspection autonome.
-Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
-Le champ "message" est TOUJOURS en francais.
-Format :
-{
-  "action": "takeoff | land | rtl | hover | goto | orbit | status | position | altitude | position_gps",
-  "altitude": <float metres AGL, defaut 15. "monte a 10m" -> 10>,
-  "delta": <float ou null. "monte de 5m" -> 5, "descend de 3m" -> -3, sinon null>,
-  "lat": <float ou null, pour goto>,
-  "lon": <float ou null, pour goto>,
-  "radius": <float metres, pour orbit, defaut 10>,
-  "speed": <float m/s, pour orbit, defaut 2>,
-  "message": "<confirmation courte en francais>"
-}
-Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
-"decolle" / "decolle a Xm" (premier envol depuis le sol) -> action="takeoff" TOUJOURS, jamais "altitude" ni "hover".
-"altitude X metres" ou "monte a X metres" (consigne de hauteur en vol, deja en l'air) -> action="altitude", jamais "hover" ni "takeoff".
-"monte de X metres" ou "descend de X metres" (variation verticale en vol) -> action="altitude", jamais "rtl", "goto" ni "takeoff".
-"retour a la base" / "rentre" / "rtl" -> action="rtl" (vol retour puis atterrissage auto), distinct de "atterris"/"land" (pose immediate sur place).
-Le champ "message" doit TOUJOURS etre en francais, jamais en anglais.
-"""
-
 
 class InterpretRequest(BaseModel):
     text: str
 
 
+class ConfirmRequest(BaseModel):
+    token: str
+
+
 @app.post("/api/interpret")
 async def interpret(req: InterpretRequest):
-    """Texte libre -> commande JSON structuree, via LFM3 local (format force)."""
+    """Texte -> interpretation + validation + execution (ou mise en attente
+    si action critique), via le pipeline de production de wireclaw.service."""
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={
-                "model": "lfm3",
-                "system": SYSTEM_PROMPT,
-                "prompt": req.text,
-                "think": False,
-                "format": "json",
-                "stream": False,
-            },
-        )
-    data = r.json()
-    try:
-        command = json.loads(data["response"])
-    except (KeyError, json.JSONDecodeError) as e:
-        return {"error": f"Reponse LFM3 invalide : {e}", "raw": data.get("response")}
-    return {"command": command}
+        r = await client.post(f"{WIRECLAW_URL}/command", json={"text": req.text})
+    return r.json()
+
+
+@app.post("/api/interpret/confirm")
+async def confirm(req: ConfirmRequest):
+    """Confirme et execute une commande critique mise en attente par /api/interpret."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{WIRECLAW_URL}/command/confirm", json={"token": req.token})
+    return r.json()
 
 
 def clean_ollama_cli_output(raw: str) -> str:
@@ -131,7 +108,7 @@ async def status():
     """Proxy vers l'API WireClaw reelle (variables de navigation en direct)."""
     async with httpx.AsyncClient(timeout=5) as client:
         try:
-            r = await client.get(WIRECLAW_STATUS_URL)
+            r = await client.get(f"{WIRECLAW_URL}/status")
             return r.json()
         except httpx.RequestError as e:
             return {"error": f"WireClaw inaccessible : {e}"}
