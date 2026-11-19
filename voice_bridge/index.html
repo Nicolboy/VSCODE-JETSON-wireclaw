@@ -193,7 +193,14 @@
 
   <div class="panel">
     <h2>Simulation 3D</h2>
-    <div id="canvas3d-wrap" style="width:100%; height:480px; border-radius:4px; overflow:hidden;"></div>
+    <div style="position:relative;">
+      <div id="canvas3d-wrap" style="width:100%; height:480px; border-radius:4px; overflow:hidden;"></div>
+      <button id="btn-fpv" class="btn-main" style="position:absolute; top:10px; right:10px; z-index:2;">Vue subjective</button>
+      <div id="compass-strip" style="position:absolute; top:10px; left:50%; transform:translateX(-50%); width:280px; height:30px; overflow:hidden; background:rgba(13,13,13,0.78); border:1px solid #2a2a2a; border-radius:4px; z-index:2;">
+        <div id="compass-inner3d" style="position:absolute; top:0; left:0; height:100%;"></div>
+        <div style="position:absolute; left:50%; top:0; bottom:0; width:2px; background:#ff8800; transform:translateX(-1px);"></div>
+      </div>
+    </div>
   </div>
 
 <script>
@@ -439,10 +446,11 @@ addLabel3d('O', -95, 0);
 // Drone : mat (sol -> altitude) + corps + nez oriente selon le cap
 const droneGroup3d = new THREE.Group();
 scene3d.add(droneGroup3d);
-droneGroup3d.add(new THREE.Mesh(
+const body3d = new THREE.Mesh(
   new THREE.CylinderGeometry(0.9, 0.9, 0.4, 16),
   new THREE.MeshStandardMaterial({ color: 0xff8800 })
-));
+);
+droneGroup3d.add(body3d);
 const nose3d = new THREE.Mesh(
   new THREE.ConeGeometry(0.4, 1.4, 12),
   new THREE.MeshStandardMaterial({ color: 0x00ff88 })
@@ -455,18 +463,65 @@ let mastGeom3d = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0
 const mast3d = new THREE.Line(mastGeom3d, new THREE.LineBasicMaterial({ color: 0x444444 }));
 scene3d.add(mast3d);
 
+// Vue subjective : camera embarquee sur le drone, FOV 50°, inclinee 45°
+// vers le bas (camera du gimbal d'inspection). Enfant de droneGroup3d
+// pour heriter automatiquement de sa position et de son cap (yaw).
+const fpvCamera3d = new THREE.PerspectiveCamera(50, canvas3dWrap.clientWidth / canvas3dWrap.clientHeight, 0.1, 2000);
+fpvCamera3d.position.set(0, 0.5, 0);
+fpvCamera3d.rotation.x = -Math.PI / 4; // 45° vers le bas
+droneGroup3d.add(fpvCamera3d);
+
+let fpvMode3d = false;
+const btnFpv3d = document.getElementById('btn-fpv');
+btnFpv3d.addEventListener('click', () => {
+  fpvMode3d = !fpvMode3d;
+  controls3d.enabled = !fpvMode3d;
+  body3d.visible = !fpvMode3d;
+  nose3d.visible = !fpvMode3d;
+  btnFpv3d.textContent = fpvMode3d ? 'Vue orbite' : 'Vue subjective';
+});
+
 function animate3d() {
   requestAnimationFrame(animate3d);
   controls3d.update();
-  renderer3d.render(scene3d, camera3d);
+  renderer3d.render(scene3d, fpvMode3d ? fpvCamera3d : camera3d);
 }
 animate3d();
 
 window.addEventListener('resize', () => {
-  camera3d.aspect = canvas3dWrap.clientWidth / canvas3dWrap.clientHeight;
+  const aspect = canvas3dWrap.clientWidth / canvas3dWrap.clientHeight;
+  camera3d.aspect = aspect;
   camera3d.updateProjectionMatrix();
+  fpvCamera3d.aspect = aspect;
+  fpvCamera3d.updateProjectionMatrix();
   renderer3d.setSize(canvas3dWrap.clientWidth, canvas3dWrap.clientHeight);
 });
+
+// Bandeau boussole (type OSD FPV) : bande graduee tous les 15°, labels
+// cardinaux tous les 45°, qui defile pour que le cap actuel reste toujours
+// centre sous le repere orange fixe.
+const COMPASS_PX_PER_DEG = 3;
+const COMPASS_WIDTH = 280;
+const compassInner3d = document.getElementById('compass-inner3d');
+(function buildCompass3d() {
+  const names = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SO', 270: 'O', 315: 'NO' };
+  let html = '';
+  for (let deg = -360; deg <= 720; deg += 15) {
+    const norm = ((deg % 360) + 360) % 360;
+    const label = names[norm];
+    const xpos = (deg + 360) * COMPASS_PX_PER_DEG;
+    html += `<div style="position:absolute; left:${xpos}px; top:2px; width:1px; height:${label ? 14 : 8}px; background:#555;"></div>`;
+    if (label) {
+      html += `<div style="position:absolute; left:${xpos - 10}px; top:16px; width:20px; text-align:center; font-family:monospace; font-size:0.7rem; color:#00ff88;">${label}</div>`;
+    }
+  }
+  compassInner3d.innerHTML = html;
+  compassInner3d.style.width = (1080 * COMPASS_PX_PER_DEG) + 'px';
+})();
+function updateCompass3d(heading) {
+  const offsetPx = (heading + 360) * COMPASS_PX_PER_DEG - COMPASS_WIDTH / 2;
+  compassInner3d.style.transform = `translateX(${-offsetPx}px)`;
+}
 
 function update3d(d) {
   const x = d.east_m;
@@ -475,6 +530,7 @@ function update3d(d) {
   droneGroup3d.position.set(x, y, z);
   droneGroup3d.rotation.y = -THREE.MathUtils.degToRad(d.heading);
   mastGeom3d.setFromPoints([new THREE.Vector3(x, 0, z), new THREE.Vector3(x, y, z)]);
+  updateCompass3d(d.heading);
 }
 
 async function refreshStatus() {

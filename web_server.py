@@ -412,6 +412,11 @@ SIM3D_HTML = """<!DOCTYPE html>
 </head>
 <body>
   <div id="canvas-wrap"></div>
+  <button id="btn-fpv" style="position:fixed; top:12px; right:12px; z-index:2; background:#00ff88; color:#000; border:none; border-radius:4px; padding:10px 16px; font-family:monospace; font-weight:bold; cursor:pointer;">Vue subjective</button>
+  <div id="compass-strip" style="position:fixed; top:12px; left:50%; transform:translateX(-50%); width:280px; height:30px; overflow:hidden; background:rgba(13,13,13,0.78); border:1px solid #2a2a2a; border-radius:4px; z-index:2;">
+    <div id="compass-inner" style="position:absolute; top:0; left:0; height:100%;"></div>
+    <div style="position:absolute; left:50%; top:0; bottom:0; width:2px; background:#ff8800; transform:translateX(-1px);"></div>
+  </div>
   <div id="hud">
     <h1>WIRECLAW — SIM 3D</h1>
     <div><span id="status-dot"></span><span id="s-conn">connexion...</span></div>
@@ -507,19 +512,66 @@ let mastGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0
 const mast = new THREE.Line(mastGeom, mastMat);
 scene.add(mast);
 
+// Vue subjective : camera embarquee sur le drone, FOV 50°, inclinee 45°
+// vers le bas (camera du gimbal d'inspection). Enfant de droneGroup pour
+// heriter automatiquement de sa position et de son cap (yaw).
+const fpvCamera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+fpvCamera.position.set(0, 0.5, 0);
+fpvCamera.rotation.x = -Math.PI / 4; // 45° vers le bas
+droneGroup.add(fpvCamera);
+
+let fpvMode = false;
+const btnFpv = document.getElementById('btn-fpv');
+btnFpv.addEventListener('click', () => {
+  fpvMode = !fpvMode;
+  controls.enabled = !fpvMode;
+  body.visible = !fpvMode;
+  nose.visible = !fpvMode;
+  btnFpv.textContent = fpvMode ? 'Vue orbite' : 'Vue subjective';
+});
+
 // --- Boucle de rendu ---
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
-  renderer.render(scene, camera);
+  renderer.render(scene, fpvMode ? fpvCamera : camera);
 }
 animate();
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  const aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = aspect;
   camera.updateProjectionMatrix();
+  fpvCamera.aspect = aspect;
+  fpvCamera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// Bandeau boussole (type OSD FPV) : bande graduee tous les 15°, labels
+// cardinaux tous les 45°, qui defile pour que le cap actuel reste toujours
+// centre sous le repere orange fixe.
+const COMPASS_PX_PER_DEG = 3;
+const COMPASS_WIDTH = 280;
+const compassInner = document.getElementById('compass-inner');
+(function buildCompass() {
+  const names = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SO', 270: 'O', 315: 'NO' };
+  let html = '';
+  for (let deg = -360; deg <= 720; deg += 15) {
+    const norm = ((deg % 360) + 360) % 360;
+    const label = names[norm];
+    const xpos = (deg + 360) * COMPASS_PX_PER_DEG;
+    html += `<div style="position:absolute; left:${xpos}px; top:2px; width:1px; height:${label ? 14 : 8}px; background:#555;"></div>`;
+    if (label) {
+      html += `<div style="position:absolute; left:${xpos - 10}px; top:16px; width:20px; text-align:center; font-family:monospace; font-size:0.7rem; color:#00ff88;">${label}</div>`;
+    }
+  }
+  compassInner.innerHTML = html;
+  compassInner.style.width = (1080 * COMPASS_PX_PER_DEG) + 'px';
+})();
+function updateCompass(heading) {
+  const offsetPx = (heading + 360) * COMPASS_PX_PER_DEG - COMPASS_WIDTH / 2;
+  compassInner.style.transform = `translateX(${-offsetPx}px)`;
+}
 
 // --- Telemetrie en direct ---
 async function refreshStatus() {
@@ -538,6 +590,7 @@ async function refreshStatus() {
     droneGroup.rotation.y = -THREE.MathUtils.degToRad(d.heading);
 
     mastGeom.setFromPoints([new THREE.Vector3(x, 0, z), new THREE.Vector3(x, y, z)]);
+    updateCompass(d.heading);
 
     document.getElementById('s-alt').textContent = d.alt.toFixed(1) + ' m';
     document.getElementById('s-heading').textContent = d.heading.toFixed(0) + '°';
