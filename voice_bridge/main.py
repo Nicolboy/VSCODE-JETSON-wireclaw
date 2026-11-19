@@ -11,7 +11,6 @@ contourner par un deuxieme chemin non protege.
 """
 import difflib
 import os
-import re
 import subprocess
 import tempfile
 
@@ -21,11 +20,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 WIRECLAW_URL = "http://127.0.0.1:8765"
+OLLAMA_URL = "http://127.0.0.1:11434"
 
-# Vocabulaire de pilotage connu — sert a la fois d'indice dans le prompt de
-# transcription (guide lfm3-audio vers les mots attendus, plus rapide et
-# plus fiable qu'une transcription libre) et de correction deterministe en
-# sortie (ex. "statue" entendu a la place de "status").
+# Vocabulaire de pilotage connu, pour corriger en sortie toute transcription
+# proche d'un terme attendu (ex. "statue" entendu a la place de "status").
 KNOWN_VOCABULARY = [
     "status", "position", "altitude", "hover", "orbite",
     "decolle", "atterris", "monte", "descend", "retour", "base",
@@ -78,26 +76,14 @@ async def confirm(req: ConfirmRequest):
     return r.json()
 
 
-def clean_ollama_cli_output(raw: str, prompt: str = "") -> str:
-    """Retire les sequences ANSI (curseur, couleur) et le bloc 'Thinking...'
-    laisses par `ollama run` en sortie CLI — il n'y a pas d'equivalent
-    --think=false pour la sortie audio via CLI, contrairement a l'API HTTP."""
-    text = raw.replace("\x1b", "")
-    text = re.sub(r"\[\?\d+[hl]", "", text)
-    text = re.sub(r"\[[0-9]*[GKA]", "", text)
-    text = re.sub(r"^Added \w+ '.*'$", "", text, flags=re.MULTILINE)
-    if "...done thinking." in text:
-        text = text.split("...done thinking.", 1)[1]
-    # Le modele echo parfois la consigne en fin de transcription — on la retire si presente.
-    if prompt:
-        text = text.replace(prompt, "")
-    text = re.sub(r"\n+", " ", text).strip()
-    return text
-
-
 @app.post("/api/transcribe")
 async def transcribe(file: UploadFile = File(...)):
-    """Audio (webm/ogg/wav, peu importe) -> conversion 16kHz mono -> transcription lfm3-audio."""
+    """Audio (webm/ogg/wav, peu importe) -> conversion 16kHz mono -> transcription lfm3-audio.
+
+    Passe par l'endpoint OpenAI-compatible /v1/audio/transcriptions d'Ollama,
+    pas par `ollama run` en CLI : ~0.3s contre 11-15s pour le meme fichier,
+    le CLI ayant un gros surcout de demarrage (parsing, rendu du spinner de
+    progression, pas d'API HTTP directe pour l'audio avant Ollama 0.40.13)."""
     with tempfile.TemporaryDirectory() as tmp:
         raw_path = os.path.join(tmp, "input")
         wav_path = os.path.join(tmp, "audio16k.wav")
@@ -117,19 +103,17 @@ async def transcribe(file: UploadFile = File(...)):
         if conv.returncode != 0:
             return {"error": f"Conversion audio echouee ({len(raw_bytes)} octets recus) : {conv.stderr.strip()}"}
 
-        prompt = (
-            "Transcris cet audio en francais, rien d'autre. "
-            "C'est une commande courte de pilotage de drone, vocabulaire probable : "
-            + ", ".join(KNOWN_VOCABULARY) + "."
-        )
-        result = subprocess.run(
-            ["ollama", "run", "lfm3-audio", prompt, wav_path],
-            capture_output=True, text=True, timeout=90,
-        )
-        if result.returncode != 0:
-            return {"error": f"Transcription echouee : {result.stderr.strip()}"}
+        with open(wav_path, "rb") as f:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(
+                    f"{OLLAMA_URL}/v1/audio/transcriptions",
+                    data={"model": "lfm3-audio"},
+                    files={"file": ("audio16k.wav", f, "audio/wav")},
+                )
+    if r.status_code != 200:
+        return {"error": f"Transcription echouee ({r.status_code}) : {r.text}"}
 
-    text = correct_known_vocabulary(clean_ollama_cli_output(result.stdout, prompt))
+    text = correct_known_vocabulary(r.json().get("text", "").strip())
     return {"text": text}
 
 
