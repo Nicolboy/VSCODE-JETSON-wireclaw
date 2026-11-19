@@ -2,8 +2,14 @@
 
 Station sol embarquée (Jetson Orin Nano) pour un drone d'inspection : un
 opérateur donne des instructions en français, à l'écrit ou à l'oral, un LLM
-(Gemini) les interprète et génère les commandes MAVLink correspondantes vers
-ArduPilot.
+local (**LFM3**, via Ollama) les interprète et génère les commandes MAVLink
+correspondantes vers ArduPilot.
+
+**Page publique (voix + texte + instruments de navigation + simulation 3D) :**
+**[sable.nicolasboyer.com](https://sable.nicolasboyer.com)** — mode d'emploi
+sur [sable.nicolasboyer.com/guide.html](https://sable.nicolasboyer.com/guide.html).
+
+![Page WireClaw — commande vocale et simulation 3D](docs/sable-screenshot.png)
 
 ## Architecture
 
@@ -11,7 +17,7 @@ ArduPilot.
 Opérateur (texte/voix)
         │
         ▼
-   wireclaw_core.py ──Gemini API──► interprétation → commande
+   wireclaw_core.py ──LFM3 (Ollama local)──► interprétation → commande
         │
         ▼ MAVSDK / pymavlink (UDP)
    MAVProxy ◄──► ArduPilot (SITL aujourd'hui, Matek H743 prévu)
@@ -49,14 +55,22 @@ des choix : [`CLAUDE.md`](CLAUDE.md).
   12.6, numpy figé à 1.26.4, cv2 système) est documenté dans
   [`CLAUDE.md`](CLAUDE.md) plutôt que figé dans un lockfile qui ne
   reproduirait rien sur une autre machine.
-- Caméra thermique (SkyDroid C12) et transcription vocale locale (Whisper) :
-  pas encore intégrées, prévues.
+- Caméra thermique (SkyDroid C12) : pas encore intégrée, prévue.
+- Il n'y a actuellement **aucune confirmation préalable** avant l'exécution
+  d'une commande vocale/texte (retirée volontairement pour accélérer les
+  tests) — seules les bornes dures de `validate_command()` (altitude,
+  géofence, distances, angles) protègent contre une hallucination du LLM.
 
 ## Composants
 
-- `wireclaw_core.py` — cerveau : boucle de commande, appel Gemini, exécution
-  MAVLink.
-- `web_server.py` — API FastAPI (port 8765) qui expose le pilotage.
+- `wireclaw_core.py` — cerveau : boucle de commande, interprétation LFM3
+  (Ollama local), validation en dur, exécution MAVLink.
+- `web_server.py` — API FastAPI (port 8765) qui expose le pilotage, les
+  instruments de navigation, et une vue de simulation 3D (`/sim3d`).
+- `voice_bridge/` — service FastAPI (port 8766) dédié à la transcription
+  audio (LFM3-audio) ; exposé publiquement via nginx sur
+  [sable.nicolasboyer.com](https://sable.nicolasboyer.com) (page unique :
+  micro/texte, résultat, navigation, simulation 3D, guide).
 - `receive_cam.py` — réception H.264 UDP (port 5600) depuis le Pi Zero,
   inférence YOLOv8 (TensorRT), overlay RSSI, sortie MJPEG annotée (port
   5601).
@@ -73,12 +87,14 @@ Projet complémentaire, même écosystème : `wireclaw-pizero`
 
 ```bash
 cp .env.example .env
-# puis éditer .env (clé Gemini, mot de passe hotspot WiFi, etc.)
+# puis éditer .env (mot de passe hotspot WiFi, etc.)
 ./start.sh
 ```
 
-Nécessite ArduPilot compilé localement (`~/ardupilot/build/sitl/bin/arducopter`)
-et MAVProxy installé — voir [`CLAUDE.md`](CLAUDE.md) pour la stack complète.
+Nécessite ArduPilot compilé localement (`~/ardupilot/build/sitl/bin/arducopter`),
+MAVProxy, et [Ollama](https://ollama.com) avec les modèles `lfm3` et
+`lfm3-audio` installés (`ollama pull lfm3 && ollama pull lfm3-audio`) — voir
+[`CLAUDE.md`](CLAUDE.md) pour la stack complète.
 
 ## Licence
 
