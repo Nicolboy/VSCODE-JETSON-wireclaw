@@ -18,6 +18,8 @@ from config import (OLLAMA_URL, LFM3_MODEL,
 MAX_ALTITUDE_M      = 50.0
 GEOFENCE_RADIUS_M   = 500.0
 MAX_ORBIT_RADIUS_M  = 100.0
+MAX_MOVE_DISTANCE_M = 20.0
+MAX_YAW_ANGLE_DEG   = 180.0
 CONFIRM_TTL_S       = 30
 
 # Altitude par defaut quand aucune n'est precisee : 1m pour un premier envol
@@ -26,11 +28,14 @@ CONFIRM_TTL_S       = 30
 # d'altitude en vol).
 DEFAULT_TAKEOFF_ALTITUDE_M = 1.0
 DEFAULT_ALTITUDE_M         = 15.0
+DEFAULT_MOVE_DISTANCE_M    = 2.0
+DEFAULT_YAW_ANGLE_DEG      = 90.0
 
 # Actions qui deplacent/arment/posent le drone : necessitent une confirmation
 # explicite de l'operateur avant execution. Le reste (lecture d'etat) s'execute
 # immediatement.
-CRITICAL_ACTIONS = {"takeoff", "land", "rtl", "goto", "orbit", "altitude"}
+CRITICAL_ACTIONS = {"takeoff", "land", "rtl", "goto", "orbit", "altitude",
+                     "forward", "backward", "left", "right", "uturn"}
 KNOWN_ACTIONS = CRITICAL_ACTIONS | {"hover", "status", "position", "position_gps"}
 
 SYSTEM_PROMPT = f"""Tu es WireClaw, cerveau d'un drone d'inspection autonome.
@@ -38,13 +43,15 @@ Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
 Le champ "message" est TOUJOURS en francais.
 Format :
 {{
-  "action": "takeoff | land | rtl | hover | goto | orbit | status | position | altitude | position_gps",
+  "action": "takeoff | land | rtl | hover | goto | orbit | status | position | altitude | position_gps | forward | backward | left | right | uturn",
   "altitude": <float metres AGL, defaut 15. Utilise pour altitude cible absolue : "monte a 10m" → 10>,
-  "delta": <float|null. Variation relative : "monte de 5m" → 5, "descend de 3m" → -3, null sinon>,
+  "delta": <float|null. Variation verticale relative : "monte de 5m" → 5, "descend de 3m" → -3, null sinon>,
+  "distance": <float metres, pour forward/backward uniquement : "avance de 10m" → 10, null si non precise>,
+  "angle": <float degres, pour left/right uniquement : "tourne a gauche de 45 degres" → 45, null si non precise>,
   "lat": <float, pour goto>,
   "lon": <float, pour goto>,
   "radius": <float metres, pour orbit, defaut 10>,
-  "speed": <float m/s, pour orbit, defaut 2>,
+  "speed": <float m/s, pour orbit/forward/backward, defaut 2>,
   "message": "<confirmation courte en francais>"
 }}
 Position de base : lat={BASE_LAT}, lon={BASE_LON}.
@@ -55,7 +62,12 @@ Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 "monte de X metres" ou "descend de X metres" (variation verticale en vol, pas un premier decollage) -> action="altitude", jamais "rtl", "goto" ni "takeoff".
 "retour a la base" / "rentre" / "rtl" -> action="rtl" (vol retour puis atterrissage auto), distinct de "atterris"/"land" (pose immediate sur place).
 "maintiens la position" / "tiens la position" / "reste la" -> action="hover" (arret sur place en vol), jamais "position" (qui ne fait qu'afficher la position actuelle, action differente).
-Les nombres peuvent etre dictes en toutes lettres (ex. "dix" = 10, "cinq" = 5, "huit" = 8) : les convertir systematiquement en chiffre dans "altitude"/"delta"/"radius"/"speed", ne jamais les laisser a leur valeur par defaut quand un nombre a ete prononce.
+"avance" / "avance de Xm" (deplacement horizontal vers l'avant, relatif au cap actuel) -> action="forward", distance=X si precise sinon null. Jamais "takeoff" ni "altitude".
+"recule" / "recule de Xm" (deplacement horizontal vers l'arriere) -> action="backward", distance=X si precise sinon null. Jamais "rtl".
+"gauche" / "tourne a gauche [de X degres]" -> action="left", angle=X si precise sinon null.
+"droite" / "tourne a droite [de X degres]" -> action="right", angle=X si precise sinon null.
+"demi-tour" -> action="uturn" (toujours 180 degres, pas de direction a choisir).
+Les nombres peuvent etre dictes en toutes lettres (ex. "dix" = 10, "cinq" = 5, "huit" = 8) : les convertir systematiquement en chiffre dans "altitude"/"delta"/"distance"/"angle"/"radius"/"speed", ne jamais les laisser a leur valeur par defaut quand un nombre a ete prononce.
 """
 
 ARDUCOPTER_MODES = {
@@ -69,7 +81,7 @@ ARDUCOPTER_MODES = {
 }
 
 drone_armed = False
-current_pos = {"lat": BASE_LAT, "lon": BASE_LON, "alt": 0, "abs_alt": 584}
+current_pos = {"lat": BASE_LAT, "lon": BASE_LON, "alt": 0, "abs_alt": 584, "heading": 0.0}
 telemetry_cache = {"battery": -1.0, "mode": "UNKNOWN", "gps_fix": "UNKNOWN", "gps_sats": 0}
 mav = None
 drone = None
@@ -94,6 +106,16 @@ def send_orbit_cmd(radius, speed, lat, lon, abs_alt):
         34, 0, radius, speed, 0, float('nan'), lat, lon, abs_alt
     )
 
+def send_yaw_cmd(angle_deg, direction):
+    """MAV_CMD_CONDITION_YAW (115) : rotation relative au cap actuel.
+    direction : -1 = sens anti-horaire (gauche), 1 = sens horaire (droite)."""
+    mav.mav.command_long_send(
+        mav.target_system, mav.target_component,
+        115, 0,
+        angle_deg, 0, direction, 1,  # param2=vitesse yaw (0=defaut), param4=1 -> relatif
+        0, 0, 0
+    )
+
 async def refresh_position(drone):
     async for pos in drone.telemetry.position():
         current_pos["lat"]     = pos.latitude_deg
@@ -116,6 +138,19 @@ async def monitor_position(drone):
     while True:
         try:
             await refresh_position(drone)
+        except Exception:
+            pass
+        await asyncio.sleep(1)
+
+async def monitor_heading(drone):
+    """Rafraichit le cap en continu — necessaire pour forward/backward
+    (deplacement relatif au cap actuel) et pour verifier le geofence en
+    validation avant meme d'executer le deplacement."""
+    while True:
+        try:
+            async for h in drone.telemetry.heading():
+                current_pos["heading"] = h.heading_deg
+                break
         except Exception:
             pass
         await asyncio.sleep(1)
@@ -183,6 +218,31 @@ def _target_altitude(cmd, default_alt=DEFAULT_ALTITUDE_M):
     delta = cmd.get("delta")
     return current_pos["alt"] + float(delta) if delta is not None else alt
 
+def _move_distance(cmd):
+    """Distance absolue (toujours positive) pour forward/backward. Le sens
+    vient de l'action elle-meme (forward ou backward), jamais du signe d'un
+    champ numerique — meme piege que delta=0 pour takeoff : un champ que le
+    LLM remplit de façon peu fiable ne doit jamais etre la seule source du
+    sens du mouvement."""
+    d = cmd.get("distance")
+    return abs(float(d)) if d else DEFAULT_MOVE_DISTANCE_M
+
+def _yaw_angle(cmd):
+    """Angle de rotation (toujours positif) pour left/right. uturn ignore
+    ce champ et utilise toujours 180°, gere a part dans les appelants."""
+    a = cmd.get("angle")
+    return abs(float(a)) if a else DEFAULT_YAW_ANGLE_DEG
+
+def _offset_position(lat, lon, heading_deg, distance_m):
+    """Point a distance_m metres de (lat, lon) dans la direction heading_deg
+    (0=Nord, sens horaire) — utilisee a la fois pour predire la position en
+    validation (verification geofence) et pour l'execution reelle, pour que
+    les deux ne puissent jamais diverger."""
+    rad = math.radians(heading_deg)
+    dlat = (distance_m * math.cos(rad)) / 111320
+    dlon = (distance_m * math.sin(rad)) / (111320 * math.cos(math.radians(lat)))
+    return lat + dlat, lon + dlon
+
 def validate_command(cmd):
     """Verifie les bornes de securite en dur. Leve ValueError pour rejeter
     la commande en entier — jamais d'execution partielle sur une commande
@@ -225,6 +285,25 @@ def validate_command(cmd):
         if not (0.0 <= alt <= MAX_ALTITUDE_M):
             raise ValueError(f"altitude {alt:.1f}m hors limite [0, {MAX_ALTITUDE_M:.0f}]m")
 
+    elif action in ("forward", "backward"):
+        distance = _move_distance(cmd)
+        if not (0.0 < distance <= MAX_MOVE_DISTANCE_M):
+            raise ValueError(f"distance {distance:.0f}m hors limite (0, {MAX_MOVE_DISTANCE_M:.0f}]m")
+        signed = distance if action == "forward" else -distance
+        target_lat, target_lon = _offset_position(
+            current_pos["lat"], current_pos["lon"], current_pos["heading"], signed
+        )
+        dist = _distance_m(BASE_LAT, BASE_LON, target_lat, target_lon)
+        if dist > GEOFENCE_RADIUS_M:
+            raise ValueError(
+                f"deplacement amenerait a {dist:.0f}m de la base, hors geofence ({GEOFENCE_RADIUS_M:.0f}m)"
+            )
+
+    elif action in ("left", "right", "uturn"):
+        angle = 180.0 if action == "uturn" else _yaw_angle(cmd)
+        if not (0.0 < angle <= MAX_YAW_ANGLE_DEG):
+            raise ValueError(f"angle {angle:.0f}° hors limite (0, {MAX_YAW_ANGLE_DEG:.0f}]°")
+
 def describe_command(cmd):
     """Resume factuel derive des champs numeriques valides — pas du champ
     "message" (texte libre genere par le LLM, donc pas fiable pour une
@@ -240,6 +319,13 @@ def describe_command(cmd):
     if action == "orbit":
         return (f"orbit → rayon {float(cmd.get('radius', 10)):.0f}m, "
                 f"vitesse {float(cmd.get('speed', 2)):.1f}m/s")
+    if action in ("forward", "backward"):
+        verb = "avance" if action == "forward" else "recule"
+        return f"{verb} → {_move_distance(cmd):.1f}m"
+    if action in ("left", "right", "uturn"):
+        angle = 180.0 if action == "uturn" else _yaw_angle(cmd)
+        verb = {"left": "tourne a gauche", "right": "tourne a droite", "uturn": "demi-tour"}[action]
+        return f"{verb} → {angle:.0f}°"
     return action
 
 async def execute_command(drone, cmd):
@@ -369,6 +455,29 @@ async def execute_command(drone, cmd):
         await refresh_position(drone)
         return f"OK {msg} — altitude {current_pos['alt']:.1f}m (cible {target_alt:.1f}m)"
 
+    elif action in ("forward", "backward"):
+        if current_pos["alt"] < 2.0:
+            await drone.action.set_takeoff_altitude(alt)
+            await drone.action.arm()
+            await drone.action.takeoff()
+            await asyncio.sleep(8)
+        await refresh_position(drone)
+        distance = _move_distance(cmd)
+        signed = distance if action == "forward" else -distance
+        target_lat, target_lon = _offset_position(
+            current_pos["lat"], current_pos["lon"], current_pos["heading"], signed
+        )
+        await drone.action.goto_location(target_lat, target_lon, current_pos["abs_alt"], float('nan'))
+        await asyncio.sleep(4)
+        await refresh_position(drone)
+        return f"OK {msg} — ({current_pos['lat']:.6f}, {current_pos['lon']:.6f})"
+
+    elif action in ("left", "right", "uturn"):
+        angle = 180.0 if action == "uturn" else _yaw_angle(cmd)
+        direction = -1 if action == "left" else 1
+        send_yaw_cmd(angle, direction)
+        return "OK " + msg
+
     elif action == "position_gps":
         import datetime
         await refresh_position(drone)
@@ -464,6 +573,7 @@ async def init():
             asyncio.create_task(monitor_armed(drone))
             asyncio.create_task(monitor_telemetry(drone))
             asyncio.create_task(monitor_position(drone))
+            asyncio.create_task(monitor_heading(drone))
             break
 
 async def main():
