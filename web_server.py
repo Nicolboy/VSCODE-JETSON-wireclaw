@@ -505,14 +505,15 @@ function addTree(x, z) {
   foliage.position.set(x, 5.5, z);
   scene.add(foliage);
 }
-[[25, 15], [35, -10], [-20, 30], [-30, -25], [15, 45], [50, 20], [-45, 10], [10, -40]]
+[[25, 15], [100, 60], [-90, 120], [-130, -100], [60, 180], [180, 30],
+ [-170, 40], [40, -160], [160, -60], [-60, 150], [120, 140], [-150, -170]]
   .forEach(([x, z]) => addTree(x, z));
 
 const wall = new THREE.Mesh(
   new THREE.BoxGeometry(20, 3, 0.5),
   new THREE.MeshStandardMaterial({ color: 0x9e9e9e })
 );
-wall.position.set(40, 1.5, 10);
+wall.position.set(130, 1.5, 170);
 scene.add(wall);
 
 // Pylone electrique (cible d'inspection typique) : fut effile en 4
@@ -540,7 +541,153 @@ function addPylon(x, z) {
     group.add(arm);
   });
 }
-addPylon(-50, -30);
+// Ligne electrique : 3 pylones alignes (a 100m du bord) + cables entre les bras
+[-150, 0, 150].forEach((z) => addPylon(-100, z));
+[20, 26].forEach((armY) => {
+  const pts = [-150, 0, 150].map((z) => new THREE.Vector3(-100, armY, z));
+  const wireGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  scene.add(new THREE.Line(wireGeo, new THREE.LineBasicMaterial({ color: 0x222222 })));
+});
+
+// Hangar agricole : corps + toit a deux pans (deux panneaux inclines)
+function addHangar(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene.add(group);
+  const W = 14, D = 8, H = 5, roofH = 2.5;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(W, H, D),
+    new THREE.MeshStandardMaterial({ color: 0xb0bec5 })
+  );
+  body.position.y = H / 2;
+  group.add(body);
+  const slopeLen = Math.sqrt((D / 2) ** 2 + roofH ** 2);
+  const angle = Math.atan2(roofH, D / 2);
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x7a2e2e });
+  const slope1 = new THREE.Mesh(new THREE.BoxGeometry(W, 0.3, slopeLen), roofMat);
+  slope1.position.set(0, H + roofH / 2, D / 4);
+  slope1.rotation.x = angle;
+  group.add(slope1);
+  const slope2 = new THREE.Mesh(new THREE.BoxGeometry(W, 0.3, slopeLen), roofMat);
+  slope2.position.set(0, H + roofH / 2, -D / 4);
+  slope2.rotation.x = -angle;
+  group.add(slope2);
+}
+addHangar(160, -120);
+
+// Maisons : corps + toit pyramidal (cone a 4 faces)
+function addHouse(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene.add(group);
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(6, 3, 6),
+    new THREE.MeshStandardMaterial({ color: 0xd7ccc8 })
+  );
+  body.position.y = 1.5;
+  group.add(body);
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(4.8, 2.5, 4),
+    new THREE.MeshStandardMaterial({ color: 0x6d4c41 })
+  );
+  roof.position.y = 3 + 1.25;
+  roof.rotation.y = Math.PI / 4;
+  group.add(roof);
+}
+// Hameau de 10 maisons groupees au nord-est du centre (nord = -Z, est = +X)
+[[-21, -14], [-7, -14], [7, -14],
+ [-21, 0], [-7, 0], [7, 0], [21, 0],
+ [-7, 14], [7, 14], [21, 14]]
+  .forEach(([dx, dz]) => addHouse(90 + dx, -90 + dz));
+
+// Chemin de terre reliant le hameau a la route
+const path = new THREE.Mesh(
+  new THREE.PlaneGeometry(3, 30),
+  new THREE.MeshStandardMaterial({ color: 0x8d6e4f })
+);
+path.rotation.x = -Math.PI / 2;
+path.position.set(90, 0.025, -75);
+scene.add(path);
+
+// Eglise : nef + toit a deux pans + clocher a fleche
+function addChurch(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene.add(group);
+  const Wd = 6, H = 6, Len = 14, roofH = 2.5;
+  const nave = new THREE.Mesh(
+    new THREE.BoxGeometry(Wd, H, Len),
+    new THREE.MeshStandardMaterial({ color: 0xe8e0d0 })
+  );
+  nave.position.y = H / 2;
+  group.add(nave);
+  const slopeLen = Math.sqrt((Wd / 2) ** 2 + roofH ** 2);
+  const angle = Math.atan2(roofH, Wd / 2);
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x4e342e });
+  const slopeA = new THREE.Mesh(new THREE.BoxGeometry(slopeLen, 0.3, Len), roofMat);
+  slopeA.position.set(Wd / 4, H + roofH / 2, 0);
+  slopeA.rotation.z = -angle;
+  group.add(slopeA);
+  const slopeB = new THREE.Mesh(new THREE.BoxGeometry(slopeLen, 0.3, Len), roofMat);
+  slopeB.position.set(-Wd / 4, H + roofH / 2, 0);
+  slopeB.rotation.z = angle;
+  group.add(slopeB);
+  const tower = new THREE.Mesh(
+    new THREE.BoxGeometry(4, 12, 4),
+    new THREE.MeshStandardMaterial({ color: 0xcfc6b0 })
+  );
+  tower.position.set(0, 6, -Len / 2 - 2);
+  group.add(tower);
+  const spire = new THREE.Mesh(
+    new THREE.ConeGeometry(3.2, 5, 4),
+    new THREE.MeshStandardMaterial({ color: 0x37474f })
+  );
+  spire.position.set(0, 12 + 2.5, -Len / 2 - 2);
+  spire.rotation.y = Math.PI / 4;
+  group.add(spire);
+}
+addChurch(50, -90);
+
+// Petite foret (50 arbres disperses) avec clairiere au nord-ouest
+(function addForest(cx, cz, radius, count) {
+  let placed = 0, guard = 0;
+  while (placed < count && guard < 3000) {
+    guard++;
+    const dx = (Math.random() * 2 - 1) * radius;
+    const dz = (Math.random() * 2 - 1) * radius;
+    if (dx * dx + dz * dz > radius * radius) continue;
+    if (dx < 0 && dz < 0) continue; // clairiere nord-ouest
+    addTree(cx + dx, cz + dz);
+    placed++;
+  }
+})(130, 130, 55, 50);
+
+// Route (bande d'asphalte + ligne centrale pointillee)
+const road = new THREE.Mesh(
+  new THREE.PlaneGeometry(380, 6),
+  new THREE.MeshStandardMaterial({ color: 0x333333 })
+);
+road.rotation.x = -Math.PI / 2;
+road.position.set(0, 0.02, -60);
+scene.add(road);
+for (let i = -185; i < 185; i += 10) {
+  const seg = new THREE.Mesh(
+    new THREE.PlaneGeometry(4, 0.3),
+    new THREE.MeshStandardMaterial({ color: 0xcccc66 })
+  );
+  seg.rotation.x = -Math.PI / 2;
+  seg.position.set(i, 0.03, -60);
+  scene.add(seg);
+}
+
+// Anneau blanc au sol marquant la position de la base (10m de diametre)
+const basePad = new THREE.Mesh(
+  new THREE.RingGeometry(4, 5, 48),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+);
+basePad.rotation.x = -Math.PI / 2;
+basePad.position.set(0, 0.015, 0);
+scene.add(basePad);
 
 // --- Drone : mat (ligne verticale jusqu'au sol) + corps + nez (cap) ---
 const droneGroup = new THREE.Group();
