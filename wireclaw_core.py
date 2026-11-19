@@ -54,6 +54,8 @@ Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 "decolle" / "decolle a Xm" (premier envol depuis le sol) -> action="takeoff" TOUJOURS, jamais "altitude".
 "monte de X metres" ou "descend de X metres" (variation verticale en vol, pas un premier decollage) -> action="altitude", jamais "rtl", "goto" ni "takeoff".
 "retour a la base" / "rentre" / "rtl" -> action="rtl" (vol retour puis atterrissage auto), distinct de "atterris"/"land" (pose immediate sur place).
+"maintiens la position" / "tiens la position" / "reste la" -> action="hover" (arret sur place en vol), jamais "position" (qui ne fait qu'afficher la position actuelle, action differente).
+Les nombres peuvent etre dictes en toutes lettres (ex. "dix" = 10, "cinq" = 5, "huit" = 8) : les convertir systematiquement en chiffre dans "altitude"/"delta"/"radius"/"speed", ne jamais les laisser a leur valeur par defaut quand un nombre a ete prononce.
 """
 
 ARDUCOPTER_MODES = {
