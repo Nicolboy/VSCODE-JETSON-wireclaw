@@ -147,13 +147,16 @@ git add . && git commit -m "message" && git push origin main
 ```
 
 ## Commandes WireClaw validées
-- `takeoff Xm` → décollage altitude X mètres
+- `takeoff Xm` → décollage altitude X mètres (défaut 1m si non précisé, "décolle"/"décollage")
 - `land` / `atterris` → atterrissage
 - `rtl` / `rentre` → retour à la base
-- `hover` → maintien de position
+- `hover` / `maintiens la position` → maintien de position
 - `goto` → navigation vers coordonnées (calcul depuis description naturelle)
+- `altitude` / `monte`/`descend de Xm` → changement d'altitude en vol (défaut 15m)
 - `status` → position, altitude, batterie, mode, armement
-- `orbit` → orbite native (fallback waypoints en SITL)
+- `orbit` → orbite native (fallback waypoints en SITL) — fiabilité faible sans rayon explicite, LFM3 hallucine un rayon aberrant quand on dit juste "orbite" (bloqué par la validation dure, mais toujours demander un rayon)
+- `forward`/`backward` ("avance"/"recule" [de Xm]) → déplacement horizontal relatif au cap actuel (défaut 2m, borne dure 20m, géofence vérifiée sur la position prédite)
+- `left`/`right`/`uturn` ("tourne à gauche/droite [de X°]", "demi-tour") → rotation via `MAV_CMD_CONDITION_YAW` relatif (défaut 90°, borne dure 180°, `uturn` toujours 180°)
 
 ## Prochaines étapes
 1. ~~Réception Pi Zero 2W + caméra OV5647~~ ✅ Pi Zero IP 192.168.1.132, reçu et testé
