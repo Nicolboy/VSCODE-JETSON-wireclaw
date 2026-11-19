@@ -379,13 +379,13 @@ async def execute_command(drone, cmd):
             )
             await asyncio.sleep(6)
             await refresh_position(drone)
-            return f"OK {msg} — altitude {current_pos['alt']:.1f}m"
+            return f"OK {msg} — altitude {current_pos['alt']:.1f}m (cible {target_alt:.1f}m)"
         await drone.action.set_takeoff_altitude(target_alt)
         await drone.action.arm()
         await drone.action.takeoff()
         await asyncio.sleep(8)
         await refresh_position(drone)
-        return f"OK {msg} — altitude {current_pos['alt']:.1f}m"
+        return f"OK {msg} — altitude {current_pos['alt']:.1f}m (cible {target_alt:.1f}m)"
 
     elif action == "goto":
         if not drone_armed:
