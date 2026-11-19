@@ -60,6 +60,11 @@ Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 1 degre lat = 111320m, 1 degre lon = 111320*cos(lat)m
 "decolle" / "decolle a Xm" (premier envol depuis le sol) -> action="takeoff" TOUJOURS, jamais "altitude".
 "monte de X metres" ou "descend de X metres" (variation verticale en vol, pas un premier decollage) -> action="altitude", jamais "rtl", "goto" ni "takeoff".
+Pour "monte"/"descend"/"altitude", verifie d'abord si le mot "de" est present juste avant le nombre :
+- SANS "de" juste avant le nombre (ex. "monte a 10m", "monte 10m", "altitude 10m") -> cible ABSOLUE : altitude=X, delta=null OBLIGATOIREMENT.
+- AVEC "de" juste avant le nombre (ex. "monte de 10m", "descend de 3m") -> variation RELATIVE : delta=X (positif pour monte, negatif pour descend), altitude=null OBLIGATOIREMENT.
+Ne jamais remplir altitude et delta en meme temps : un seul des deux est non-null, selon la presence ou non de "de".
+Exemple a ne pas confondre : "monte a 5m" -> altitude=5, delta=null. "monte de 5m" -> delta=5, altitude=null (PAS altitude=5).
 "retour a la base" / "rentre" / "rtl" -> action="rtl" (vol retour puis atterrissage auto), distinct de "atterris"/"land" (pose immediate sur place).
 "maintiens la position" / "tiens la position" / "reste la" -> action="hover" (arret sur place en vol), jamais "position" (qui ne fait qu'afficher la position actuelle, action differente).
 "avance" / "avance de Xm" (deplacement horizontal vers l'avant, relatif au cap actuel) -> action="forward", distance=X si precise sinon null. Jamais "takeoff" ni "altitude".
@@ -531,21 +536,16 @@ def pop_confirmed(token):
 
 async def process_text(text):
     """Texte -> commande interpretee par LFM3, validee en dur, puis executee
-    immediatement (action non critique) ou mise en attente de confirmation
-    (action critique)."""
+    immediatement. La confirmation prealable des actions critiques a ete
+    retiree a la demande de l'operateur (ralentissait les tests) — la
+    validation en dur (bornes altitude/geofence/distance/angle, action
+    connue) reste le seul filet et s'applique toujours avant toute
+    execution, inchangee."""
     cmd = await interpret_command(text)
     try:
         validate_command(cmd)
     except ValueError as e:
         return {"status": "rejected", "message": f"Commande rejetee : {e}"}
-
-    if cmd["action"] in CRITICAL_ACTIONS:
-        token = stage_command(cmd)
-        return {
-            "status": "pending",
-            "token": token,
-            "message": f"Confirmation requise — {describe_command(cmd)} ({cmd.get('message', '')})",
-        }
 
     result = await execute_command(drone, cmd)
     return {"status": "done", "message": result}
