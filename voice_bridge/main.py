@@ -95,15 +95,21 @@ async def transcribe(file: UploadFile = File(...)):
     with tempfile.TemporaryDirectory() as tmp:
         raw_path = os.path.join(tmp, "input")
         wav_path = os.path.join(tmp, "audio16k.wav")
+        raw_bytes = await file.read()
         with open(raw_path, "wb") as f:
-            f.write(await file.read())
+            f.write(raw_bytes)
+        # Copie de debug persistante (hors du tempdir, qui est efface a la sortie
+        # du `with`) pour diagnostiquer les echecs de conversion sans redemander
+        # le fichier a l'operateur.
+        with open("/tmp/voice_bridge_last_upload.webm", "wb") as f:
+            f.write(raw_bytes)
 
         conv = subprocess.run(
-            ["sox", raw_path, "-r", "16000", "-c", "1", wav_path],
+            ["ffmpeg", "-y", "-i", raw_path, "-ar", "16000", "-ac", "1", wav_path],
             capture_output=True, text=True,
         )
         if conv.returncode != 0:
-            return {"error": f"Conversion audio echouee : {conv.stderr.strip()}"}
+            return {"error": f"Conversion audio echouee ({len(raw_bytes)} octets recus) : {conv.stderr.strip()}"}
 
         result = subprocess.run(
             ["ollama", "run", "lfm3-audio", "Transcris cet audio en francais, rien d'autre.", wav_path],

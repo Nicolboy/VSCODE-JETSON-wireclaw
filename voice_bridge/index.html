@@ -53,6 +53,11 @@
   .btn-main { background: #00ff88; color: #000; }
   .btn-main:hover { background: #00cc66; }
   .btn-main.recording { background: #ff5555; color: #fff; animation: pulse 1s infinite; }
+  /* Largeur fixe : "PARLE..." est plus court que le libelle initial — sans
+     ca le bouton retrecit au clic, le curseur se retrouve hors de ses
+     nouvelles limites, et le mouseleave declenche un arret immediat de
+     l'enregistrement (PTT qui se "degage" tout seul). */
+  #btn-rec { min-width: 260px; text-align: center; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
   button:disabled { opacity: 0.4; cursor: default; }
 
