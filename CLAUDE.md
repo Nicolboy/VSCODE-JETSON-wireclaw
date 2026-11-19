@@ -75,6 +75,14 @@ Bascule via `scripts/switch_band.sh 5ghz` ou `scripts/switch_band.sh 2.4ghz` (vo
 - L'état armement est synchronisé en temps réel via `monitor_armed()` (tâche de fond)
 - `MAV_CMD_DO_ORBIT` (commande 34) non supportée en SITL → fallback waypoints circulaires 16 points
 - La batterie SITL est désactivée (BATT_MONITOR=0) pour éviter les failsafes en simulation
+- **Ne jamais utiliser un pattern `pkill -f` trop large dans `start.sh`** : le
+  nettoyage y tourne à chaque démarrage de `wireclaw.service`, et un motif
+  générique (ex. `"uvicorn"` tout court) tue aussi des process sans rapport
+  qui matchent par hasard — `voice-bridge.service` (un autre uvicorn, port
+  8766) en a fait les frais le 2026-11-19, mort silencieusement à chaque
+  redémarrage de wireclaw.service (TERM "propre" via pkill ⇒
+  `Restart=on-failure` ne se déclenche pas). Toujours cibler la commande
+  complète (`"uvicorn web_server:app"`), jamais juste le nom du runtime.
 
 ## Sécurité des commandes (depuis le passage à LFM3)
 
