@@ -43,6 +43,11 @@ Format :
   "message": "<confirmation courte en francais>"
 }
 Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
+"decolle" / "decolle a Xm" (premier envol depuis le sol) -> action="takeoff" TOUJOURS, jamais "altitude" ni "hover".
+"altitude X metres" ou "monte a X metres" (consigne de hauteur en vol, deja en l'air) -> action="altitude", jamais "hover" ni "takeoff".
+"monte de X metres" ou "descend de X metres" (variation verticale en vol) -> action="altitude", jamais "rtl", "goto" ni "takeoff".
+"retour a la base" / "rentre" / "rtl" -> action="rtl" (vol retour puis atterrissage auto), distinct de "atterris"/"land" (pose immediate sur place).
+Le champ "message" doit TOUJOURS etre en francais, jamais en anglais.
 """
 
 
