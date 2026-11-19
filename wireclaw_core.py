@@ -159,9 +159,17 @@ def _distance_m(lat1, lon1, lat2, lon2):
     return math.hypot(dlat, dlon)
 
 def _target_altitude(cmd):
-    """Reproduit exactement le calcul fait dans execute_command pour
-    takeoff/altitude, pour valider la meme valeur que celle qui sera utilisee."""
+    """Calcule l'altitude cible pour takeoff/altitude — seule source de
+    verite, utilisee a la fois par validate_command() et execute_command()
+    pour qu'elles ne puissent jamais diverger.
+    Au sol (premier envol), delta n'a pas de sens : rien n'a encore decolle
+    pour lui servir de reference. LFM3 met souvent delta=0 (au lieu de null)
+    meme sans variation demandee, ce qui donnait une cible ≈0m — on l'ignore
+    donc totalement au sol, seule l'altitude absolue compte (defaut 15m).
+    En vol, delta s'applique normalement comme variation relative."""
     alt = float(cmd.get("altitude") or 15)
+    if current_pos["alt"] < 2.0:
+        return alt
     delta = cmd.get("delta")
     return current_pos["alt"] + float(delta) if delta is not None else alt
 
@@ -253,8 +261,7 @@ async def execute_command(drone, cmd):
 
     elif action == "takeoff":
         await refresh_position(drone)
-        delta = cmd.get("delta")
-        target_alt = current_pos["alt"] + float(delta) if delta is not None else alt
+        target_alt = _target_altitude(cmd)
         if current_pos["alt"] >= 2.0:
             new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + target_alt
             await drone.action.goto_location(
@@ -333,8 +340,7 @@ async def execute_command(drone, cmd):
 
     elif action == "altitude":
         await refresh_position(drone)
-        delta = cmd.get("delta")
-        target_alt = current_pos["alt"] + float(delta) if delta is not None else alt
+        target_alt = _target_altitude(cmd)
         if current_pos["alt"] < 2.0:
             await drone.action.set_takeoff_altitude(target_alt)
             await drone.action.arm()
