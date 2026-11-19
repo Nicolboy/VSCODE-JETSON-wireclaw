@@ -1,6 +1,8 @@
 import asyncio
 import json
 import math
+import secrets
+import time
 import httpx
 from mavsdk import System
 from mavsdk.mission import MissionItem, MissionPlan
@@ -8,6 +10,21 @@ from pymavlink import mavutil
 from config import (OLLAMA_URL, LFM3_MODEL,
                     MAVLINK_ADDRESS, MAVLINK_PYMAV,
                     BASE_LAT, BASE_LON)
+
+# Bornes de securite en dur : independantes de ce que le LLM produit, pour
+# qu'une hallucination d'action/coordonnees/altitude ne puisse jamais partir
+# directement vers MAVSDK (meme logique que le TMS320 cote ESP32 : le logiciel
+# ne valide pas lui-meme, il n'execute que dans des bornes verifiees en dur).
+MAX_ALTITUDE_M      = 50.0
+GEOFENCE_RADIUS_M   = 500.0
+MAX_ORBIT_RADIUS_M  = 100.0
+CONFIRM_TTL_S       = 30
+
+# Actions qui deplacent/arment/posent le drone : necessitent une confirmation
+# explicite de l'operateur avant execution. Le reste (lecture d'etat) s'execute
+# immediatement.
+CRITICAL_ACTIONS = {"takeoff", "land", "rtl", "goto", "orbit", "altitude"}
+KNOWN_ACTIONS = CRITICAL_ACTIONS | {"hover", "status", "position", "position_gps"}
 
 SYSTEM_PROMPT = f"""Tu es WireClaw, cerveau d'un drone d'inspection autonome.
 Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
@@ -123,6 +140,74 @@ async def interpret_command(text):
         )
     data = r.json()
     return json.loads(data["response"])
+
+def _distance_m(lat1, lon1, lat2, lon2):
+    dlat = (lat2 - lat1) * 111320
+    dlon = (lon2 - lon1) * 111320 * math.cos(math.radians(lat1))
+    return math.hypot(dlat, dlon)
+
+def _target_altitude(cmd):
+    """Reproduit exactement le calcul fait dans execute_command pour
+    takeoff/altitude, pour valider la meme valeur que celle qui sera utilisee."""
+    alt = float(cmd.get("altitude") or 15)
+    delta = cmd.get("delta")
+    return current_pos["alt"] + float(delta) if delta is not None else alt
+
+def validate_command(cmd):
+    """Verifie les bornes de securite en dur. Leve ValueError pour rejeter
+    la commande en entier — jamais d'execution partielle sur une commande
+    suspecte."""
+    action = cmd.get("action")
+    if action not in KNOWN_ACTIONS:
+        raise ValueError(f"action inconnue : {action!r}")
+
+    if action in ("takeoff", "altitude"):
+        target = _target_altitude(cmd)
+        if not (0.0 <= target <= MAX_ALTITUDE_M):
+            raise ValueError(
+                f"altitude cible {target:.1f}m hors limite [0, {MAX_ALTITUDE_M:.0f}]m"
+            )
+
+    elif action == "goto":
+        lat, lon = cmd.get("lat"), cmd.get("lon")
+        if lat is None or lon is None:
+            raise ValueError("goto sans coordonnees")
+        dist = _distance_m(BASE_LAT, BASE_LON, float(lat), float(lon))
+        if dist > GEOFENCE_RADIUS_M:
+            raise ValueError(
+                f"cible a {dist:.0f}m de la base, hors geofence ({GEOFENCE_RADIUS_M:.0f}m)"
+            )
+        alt = float(cmd.get("altitude") or 15)
+        if not (0.0 <= alt <= MAX_ALTITUDE_M):
+            raise ValueError(f"altitude {alt:.1f}m hors limite [0, {MAX_ALTITUDE_M:.0f}]m")
+
+    elif action == "orbit":
+        dist = _distance_m(BASE_LAT, BASE_LON, current_pos["lat"], current_pos["lon"])
+        if dist > GEOFENCE_RADIUS_M:
+            raise ValueError(
+                f"position actuelle a {dist:.0f}m de la base, hors geofence ({GEOFENCE_RADIUS_M:.0f}m)"
+            )
+        radius = float(cmd.get("radius", 10))
+        if not (0.0 < radius <= MAX_ORBIT_RADIUS_M):
+            raise ValueError(f"rayon d'orbite {radius:.0f}m hors limite (0, {MAX_ORBIT_RADIUS_M:.0f}]m")
+        alt = float(cmd.get("altitude") or 15)
+        if not (0.0 <= alt <= MAX_ALTITUDE_M):
+            raise ValueError(f"altitude {alt:.1f}m hors limite [0, {MAX_ALTITUDE_M:.0f}]m")
+
+def describe_command(cmd):
+    """Resume factuel derive des champs numeriques valides — pas du champ
+    "message" (texte libre genere par le LLM, donc pas fiable pour une
+    decision de confirmation)."""
+    action = cmd.get("action")
+    if action in ("takeoff", "altitude"):
+        return f"{action} → altitude cible {_target_altitude(cmd):.1f}m"
+    if action == "goto":
+        return (f"goto → ({float(cmd['lat']):.6f}, {float(cmd['lon']):.6f}), "
+                f"alt {float(cmd.get('altitude') or 15):.1f}m")
+    if action == "orbit":
+        return (f"orbit → rayon {float(cmd.get('radius', 10)):.0f}m, "
+                f"vitesse {float(cmd.get('speed', 2)):.1f}m/s")
+    return action
 
 async def execute_command(drone, cmd):
     global drone_armed
@@ -279,6 +364,56 @@ async def execute_command(drone, cmd):
 
     return "Action inconnue : " + action
 
+# Une seule commande critique en attente de confirmation a la fois : une
+# nouvelle commande (confirmee ou non) remplace/efface la precedente, pour
+# qu'un operateur ne puisse jamais confirmer par erreur une commande perimee.
+_pending = {}
+
+def stage_command(cmd):
+    token = secrets.token_hex(4)
+    _pending.clear()
+    _pending[token] = {"cmd": cmd, "expires": time.monotonic() + CONFIRM_TTL_S}
+    return token
+
+def pop_confirmed(token):
+    entry = _pending.pop(token, None)
+    if entry is None:
+        raise ValueError("aucune commande en attente pour ce jeton")
+    if time.monotonic() > entry["expires"]:
+        raise ValueError("confirmation expiree (> 30s) — renvoyez la commande")
+    return entry["cmd"]
+
+async def process_text(text):
+    """Texte -> commande interpretee par LFM3, validee en dur, puis executee
+    immediatement (action non critique) ou mise en attente de confirmation
+    (action critique)."""
+    cmd = await interpret_command(text)
+    try:
+        validate_command(cmd)
+    except ValueError as e:
+        return {"status": "rejected", "message": f"Commande rejetee : {e}"}
+
+    if cmd["action"] in CRITICAL_ACTIONS:
+        token = stage_command(cmd)
+        return {
+            "status": "pending",
+            "token": token,
+            "message": f"Confirmation requise — {describe_command(cmd)} ({cmd.get('message', '')})",
+        }
+
+    result = await execute_command(drone, cmd)
+    return {"status": "done", "message": result}
+
+async def confirm_pending(token):
+    """Execute la commande critique mise en attente par process_text, apres
+    confirmation explicite de l'operateur."""
+    try:
+        cmd = pop_confirmed(token)
+    except ValueError as e:
+        return {"status": "rejected", "message": str(e)}
+    result = await execute_command(drone, cmd)
+    return {"status": "done", "message": result}
+
 async def init():
     """Initialise pymavlink, MAVSDK et démarre les tâches de fond de télémétrie."""
     global drone, drone_armed
@@ -311,10 +446,15 @@ async def main():
                 break
             if not text:
                 continue
-            cmd = await interpret_command(text)
-            print(json.dumps(cmd, ensure_ascii=False))
-            result = await execute_command(drone, cmd)
-            print(result + "\n")
+            result = await process_text(text)
+            if result["status"] == "pending":
+                print(result["message"])
+                if input("Confirmer ? (o/n) ").strip().lower() in ("o", "oui", "y", "yes"):
+                    result = await confirm_pending(result["token"])
+                else:
+                    print("Annule.\n")
+                    continue
+            print(result["message"] + "\n")
         except KeyboardInterrupt:
             break
         except Exception as e:

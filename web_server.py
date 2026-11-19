@@ -16,23 +16,28 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-async def process(text: str) -> str:
-    """Point d'entrée générique : texte libre → commande interprétée → exécutée."""
-    cmd = await wireclaw_core.interpret_command(text)
-    return await wireclaw_core.execute_command(wireclaw_core.drone, cmd)
-
-
 class CommandRequest(BaseModel):
     text: str
+
+
+class ConfirmRequest(BaseModel):
+    token: str
 
 
 @app.post("/command")
 async def command(req: CommandRequest):
     try:
-        response = await process(req.text)
-        return {"response": response}
+        return await wireclaw_core.process_text(req.text)
     except Exception as e:
-        return JSONResponse(status_code=500, content={"response": f"Erreur : {e}"})
+        return JSONResponse(status_code=500, content={"status": "error", "message": f"Erreur : {e}"})
+
+
+@app.post("/command/confirm")
+async def confirm(req: ConfirmRequest):
+    try:
+        return await wireclaw_core.confirm_pending(req.token)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": f"Erreur : {e}"})
 
 
 @app.get("/status")
@@ -136,6 +141,16 @@ HTML = """<!DOCTYPE html>
       border: 1px solid #2a2a2a;
     }
     .btn-quick:hover { border-color: #00ff88; color: #00ff88; }
+    .btn-confirm {
+      background: #ff8800;
+      color: #000;
+      padding: 4px 12px;
+      font-size: 0.78rem;
+      margin-left: 10px;
+      vertical-align: middle;
+    }
+    .btn-confirm:hover { background: #ffaa33; }
+    .btn-confirm:disabled { opacity: 0.5; cursor: default; }
 
     /* --- Historique --- */
     .history {
@@ -157,6 +172,7 @@ HTML = """<!DOCTYPE html>
       line-height: 1.5;
     }
     .entry-resp.pending { color: #555; font-style: italic; }
+    .entry-resp.waiting { color: #ff8800; font-style: normal; }
     .entry-resp.error   { color: #ff5555; }
     .entry-ts { font-size: 0.7rem; color: #444; padding-left: 22px; margin-top: 2px; }
   </style>
@@ -240,7 +256,7 @@ HTML = """<!DOCTYPE html>
       entry.className = 'entry';
       entry.innerHTML =
         `<div class="entry-cmd">${esc(text)}</div>` +
-        `<div class="entry-resp pending" id="r-${Date.now()}">en cours...</div>` +
+        `<div class="entry-resp pending">en cours...</div>` +
         `<div class="entry-ts">${ts}</div>`;
       historyEl.prepend(entry);
       const respEl = entry.querySelector('.entry-resp');
@@ -253,14 +269,43 @@ HTML = """<!DOCTYPE html>
           body: JSON.stringify({ text })
         });
         const data = await r.json();
-        respEl.textContent = data.response ?? data.detail ?? 'OK';
-        respEl.classList.remove('pending');
+        renderResult(respEl, data);
       } catch (e) {
         respEl.textContent = 'Erreur réseau';
-        respEl.classList.replace('pending', 'error');
+        respEl.className = 'entry-resp error';
       } finally {
         setLoading(false);
         inputEl.focus();
+      }
+    }
+
+    function renderResult(respEl, data) {
+      const text = data.message ?? data.detail ?? 'OK';
+      if (data.status === 'pending') {
+        respEl.className = 'entry-resp waiting';
+        respEl.innerHTML = `${esc(text)} <button class="btn-confirm">Confirmer</button>`;
+        respEl.querySelector('.btn-confirm').addEventListener('click', async (ev) => {
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          btn.textContent = 'Envoi...';
+          try {
+            const r = await fetch('/command/confirm', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: data.token })
+            });
+            renderResult(respEl, await r.json());
+          } catch (e) {
+            respEl.textContent = 'Erreur réseau';
+            respEl.className = 'entry-resp error';
+          }
+        });
+      } else if (data.status === 'rejected' || data.status === 'error') {
+        respEl.className = 'entry-resp error';
+        respEl.textContent = text;
+      } else {
+        respEl.className = 'entry-resp';
+        respEl.textContent = text;
       }
     }
 

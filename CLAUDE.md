@@ -40,7 +40,7 @@ Bascule via `scripts/switch_band.sh 5ghz` ou `scripts/switch_band.sh 2.4ghz` (vo
 - Python 3.10, asyncio
 - MAVSDK Python (udp://:14551)
 - pymavlink (udpin:0.0.0.0:14552)
-- Gemini 2.0 Flash API (clé dans .env, jamais en dur)
+- LFM3 local via Ollama (`http://127.0.0.1:11434`, modèle `lfm3`) — Gemini abandonné le 2026-11-19 (clé API invalide, décision de ne plus en dépendre)
 - MAVProxy en daemon (ports TCP:5760, UDP:14550/14551/14552)
 - ArduPilot SITL (binaire ARM64 ~/ardupilot/build/sitl/bin/arducopter)
 - PyTorch 2.8.0 + CUDA 12.6 (wheel Jetson : pypi.jetson-ai-lab.io/jp6/cu126, GPU Orin)
@@ -75,6 +75,33 @@ Bascule via `scripts/switch_band.sh 5ghz` ou `scripts/switch_band.sh 2.4ghz` (vo
 - L'état armement est synchronisé en temps réel via `monitor_armed()` (tâche de fond)
 - `MAV_CMD_DO_ORBIT` (commande 34) non supportée en SITL → fallback waypoints circulaires 16 points
 - La batterie SITL est désactivée (BATT_MONITOR=0) pour éviter les failsafes en simulation
+
+## Sécurité des commandes (depuis le passage à LFM3)
+
+LFM3 (modèle local 1,1 Go, bien moins fiable que Gemini) peut halluciner une
+action ou des paramètres. `wireclaw_core.py` n'exécute donc jamais
+directement ce que le LLM produit — même logique que le TMS320 côté ESP32 :
+le logiciel ne valide pas lui-même, il n'agit que dans des bornes vérifiées
+en dur, indépendamment du modèle.
+
+- `validate_command()` (appelée par `process_text()`, avant tout appel
+  MAVSDK) rejette **en entier** (jamais d'exécution partielle) toute
+  commande dont l'action est inconnue, l'altitude cible dépasse
+  `MAX_ALTITUDE_M` (50 m), la cible `goto` dépasse `GEOFENCE_RADIUS_M`
+  (500 m autour de `BASE_LAT`/`BASE_LON`), ou le rayon d'orbite dépasse
+  `MAX_ORBIT_RADIUS_M` (100 m).
+- Les actions qui déplacent/arment/posent le drone (`CRITICAL_ACTIONS` :
+  takeoff, land, rtl, goto, orbit, altitude) ne s'exécutent jamais
+  directement : `process_text()` les met en attente
+  (`stage_command()`/`token`, TTL 30 s) et affiche un résumé **dérivé des
+  champs numériques validés**, pas du texte libre du modèle (`message` du
+  LLM n'est montré qu'entre parenthèses, à titre indicatif). L'opérateur
+  doit appeler `POST /command/confirm` avec le jeton pour déclencher
+  `execute_command()`. Les actions de lecture (status, position,
+  position_gps, hover) s'exécutent immédiatement, sans confirmation.
+- Ne jamais faire exécuter une action critique sans passer par ce circuit
+  interpréter → valider → (confirmer) → exécuter, même pour un ajout futur
+  de code — c'est le seul filet contre une hallucination du LLM.
 
 ## Commandes de session
 ```bash
