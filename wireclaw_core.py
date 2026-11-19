@@ -40,8 +40,12 @@ KNOWN_ACTIONS = CRITICAL_ACTIONS | {"hover", "status", "position", "position_gps
 
 SYSTEM_PROMPT = f"""Tu es WireClaw, cerveau d'un drone d'inspection autonome.
 Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
-Le champ "message" est TOUJOURS en francais.
-Format :
+Le champ "message" est TOUJOURS en francais, et TRES court (3-5 mots max).
+N'inclus QUE les champs pertinents pour l'action choisie, jamais les autres
+(ne pas ecrire "lat": null, "radius": null, etc. pour une action qui n'en a
+pas besoin) — reponse la plus courte possible, uniquement action + les
+champs necessaires + message.
+Format (liste complete des champs possibles, n'en ecrire que quelques-uns par reponse) :
 {{
   "action": "takeoff | land | rtl | hover | goto | orbit | status | position | altitude | position_gps | forward | backward | left | right | uturn | heading",
   "altitude": <float metres AGL, defaut 15. Utilise pour altitude cible absolue : "monte a 10m" → 10>,
