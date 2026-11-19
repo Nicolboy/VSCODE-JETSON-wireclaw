@@ -423,16 +423,16 @@ const sun3d = new THREE.DirectionalLight(0xffffff, 0.8);
 sun3d.position.set(80, 120, 60);
 scene3d.add(sun3d);
 
-// Sol 200x200m vert
+// Sol 400x400m vert
 const ground3d = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 200),
+  new THREE.PlaneGeometry(400, 400),
   new THREE.MeshStandardMaterial({ color: 0x2e7d32 })
 );
 ground3d.rotation.x = -Math.PI / 2;
 scene3d.add(ground3d);
 
-// Repères tous les 25m (grille 200/8 divisions)
-const grid3d = new THREE.GridHelper(200, 8, 0xffffff, 0xaad4aa);
+// Repères tous les 25m (grille 400/16 divisions)
+const grid3d = new THREE.GridHelper(400, 16, 0xffffff, 0xaad4aa);
 grid3d.position.y = 0.01;
 scene3d.add(grid3d);
 
@@ -452,12 +452,206 @@ function addLabel3d(text, x, z) {
   sprite.position.set(x, 3, z);
   scene3d.add(sprite);
 }
-addLabel3d('N', 0, -95);
-addLabel3d('S', 0, 95);
-addLabel3d('E', 95, 0);
-addLabel3d('O', -95, 0);
+addLabel3d('N', 0, -195);
+addLabel3d('S', 0, 195);
+addLabel3d('E', 195, 0);
+addLabel3d('O', -195, 0);
+
+// Decor statique (purement visuel, aucun lien avec la logique de vol qui
+// suppose un sol plat — ne pas en deduire de relief ou de collision).
+function addTree3d(x, z) {
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.4, 3, 8),
+    new THREE.MeshStandardMaterial({ color: 0x6d4c25 })
+  );
+  trunk.position.set(x, 1.5, z);
+  scene3d.add(trunk);
+  const foliage = new THREE.Mesh(
+    new THREE.ConeGeometry(2.2, 5, 10),
+    new THREE.MeshStandardMaterial({ color: 0x1b5e20 })
+  );
+  foliage.position.set(x, 5.5, z);
+  scene3d.add(foliage);
+}
+[[25, 15], [100, 60], [-90, 120], [-130, -100], [60, 180], [180, 30],
+ [-170, 40], [40, -160], [160, -60], [-60, 150], [120, 140], [-150, -170]]
+  .forEach(([x, z]) => addTree3d(x, z));
+
+// Mur (cible d'inspection)
+const wall3d = new THREE.Mesh(
+  new THREE.BoxGeometry(20, 3, 0.5),
+  new THREE.MeshStandardMaterial({ color: 0x9e9e9e })
+);
+wall3d.position.set(130, 1.5, 170);
+scene3d.add(wall3d);
+
+// Pylone electrique (cible d'inspection typique) : fut effile en 4
+// segments carres + deux bras transversaux pour les isolateurs, ~27m.
+function addPylon3d(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene3d.add(group);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+  const heights = [0, 8, 16, 24];
+  const widths = [4, 2.6, 1.4, 0.6];
+  for (let i = 0; i < heights.length - 1; i++) {
+    const h = heights[i + 1] - heights[i];
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(widths[i + 1] / 2, widths[i] / 2, h, 4),
+      mat
+    );
+    seg.position.y = heights[i] + h / 2;
+    seg.rotation.y = Math.PI / 4; // section carree, pas ronde
+    group.add(seg);
+  }
+  [20, 26].forEach((y) => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(10, 0.4, 0.4), mat);
+    arm.position.y = y;
+    group.add(arm);
+  });
+}
+// Ligne electrique : 3 pylones alignes + cables entre les bras (100m du bord)
+[-150, 0, 150].forEach((z) => addPylon3d(-100, z));
+[20, 26].forEach((armY) => {
+  const pts = [-150, 0, 150].map((z) => new THREE.Vector3(-100, armY, z));
+  const wireGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  scene3d.add(new THREE.Line(wireGeo, new THREE.LineBasicMaterial({ color: 0x222222 })));
+});
+
+// Hangar agricole : corps + toit a deux pans (deux panneaux inclines)
+function addHangar3d(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene3d.add(group);
+  const W = 14, D = 8, H = 5, roofH = 2.5;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(W, H, D),
+    new THREE.MeshStandardMaterial({ color: 0xb0bec5 })
+  );
+  body.position.y = H / 2;
+  group.add(body);
+  const slopeLen = Math.sqrt((D / 2) ** 2 + roofH ** 2);
+  const angle = Math.atan2(roofH, D / 2);
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x7a2e2e });
+  const slope1 = new THREE.Mesh(new THREE.BoxGeometry(W, 0.3, slopeLen), roofMat);
+  slope1.position.set(0, H + roofH / 2, D / 4);
+  slope1.rotation.x = angle;
+  group.add(slope1);
+  const slope2 = new THREE.Mesh(new THREE.BoxGeometry(W, 0.3, slopeLen), roofMat);
+  slope2.position.set(0, H + roofH / 2, -D / 4);
+  slope2.rotation.x = -angle;
+  group.add(slope2);
+}
+addHangar3d(160, -120);
+
+// Maisons : corps + toit pyramidal (cone a 4 faces)
+function addHouse3d(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene3d.add(group);
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(6, 3, 6),
+    new THREE.MeshStandardMaterial({ color: 0xd7ccc8 })
+  );
+  body.position.y = 1.5;
+  group.add(body);
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(4.8, 2.5, 4),
+    new THREE.MeshStandardMaterial({ color: 0x6d4c41 })
+  );
+  roof.position.y = 3 + 1.25;
+  roof.rotation.y = Math.PI / 4;
+  group.add(roof);
+}
+// Hameau de 10 maisons groupees au nord-est du centre (nord = -Z, est = +X)
+[[-21, -14], [-7, -14], [7, -14],
+ [-21, 0], [-7, 0], [7, 0], [21, 0],
+ [-7, 14], [7, 14], [21, 14]]
+  .forEach(([dx, dz]) => addHouse3d(90 + dx, -90 + dz));
+
+// Chemin reliant le hameau a la route
+const path3d = new THREE.Mesh(
+  new THREE.PlaneGeometry(3, 30),
+  new THREE.MeshStandardMaterial({ color: 0x8d6e4f })
+);
+path3d.rotation.x = -Math.PI / 2;
+path3d.position.set(90, 0.025, -75);
+scene3d.add(path3d);
+
+// Eglise : nef (toit a deux pans) + clocher (fleche pyramidale)
+function addChurch3d(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene3d.add(group);
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xe0e0e0 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x5d4037 });
+  const Wd = 6, Len = 14, H = 6, roofH = 2.5;
+  const nave = new THREE.Mesh(new THREE.BoxGeometry(Wd, H, Len), wallMat);
+  nave.position.y = H / 2;
+  group.add(nave);
+  const slopeLen = Math.sqrt((Wd / 2) ** 2 + roofH ** 2);
+  const angle = Math.atan2(roofH, Wd / 2);
+  const slopeA = new THREE.Mesh(new THREE.BoxGeometry(slopeLen, 0.3, Len), roofMat);
+  slopeA.position.set(Wd / 4, H + roofH / 2, 0);
+  slopeA.rotation.z = -angle;
+  group.add(slopeA);
+  const slopeB = new THREE.Mesh(new THREE.BoxGeometry(slopeLen, 0.3, Len), roofMat);
+  slopeB.position.set(-Wd / 4, H + roofH / 2, 0);
+  slopeB.rotation.z = angle;
+  group.add(slopeB);
+  const towerH = 12;
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(4, towerH, 4), wallMat);
+  tower.position.set(0, towerH / 2, -Len / 2 - 2);
+  group.add(tower);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(3.2, 5, 4), roofMat);
+  spire.position.set(0, towerH + 2.5, -Len / 2 - 2);
+  spire.rotation.y = Math.PI / 4;
+  group.add(spire);
+}
+addChurch3d(50, -90);
+
+// Petite foret (50 arbres) avec clairiere au nord-ouest (nord = -Z, ouest = -X)
+(function addForest3d(cx, cz, radius, count) {
+  let placed = 0, guard = 0;
+  while (placed < count && guard < 3000) {
+    guard++;
+    const dx = (Math.random() * 2 - 1) * radius;
+    const dz = (Math.random() * 2 - 1) * radius;
+    if (dx * dx + dz * dz > radius * radius) continue;
+    if (dx < 0 && dz < 0) continue; // clairiere nord-ouest
+    addTree3d(cx + dx, cz + dz);
+    placed++;
+  }
+})(130, 130, 55, 50);
+
+// Route (bande d'asphalte + ligne centrale pointillee)
+const road3d = new THREE.Mesh(
+  new THREE.PlaneGeometry(380, 6),
+  new THREE.MeshStandardMaterial({ color: 0x333333 })
+);
+road3d.rotation.x = -Math.PI / 2;
+road3d.position.set(0, 0.02, -60);
+scene3d.add(road3d);
+for (let i = -185; i < 185; i += 10) {
+  const seg = new THREE.Mesh(
+    new THREE.PlaneGeometry(4, 0.3),
+    new THREE.MeshStandardMaterial({ color: 0xcccc66 })
+  );
+  seg.rotation.x = -Math.PI / 2;
+  seg.position.set(i, 0.03, -60);
+  scene3d.add(seg);
+}
 
 // Drone : mat (sol -> altitude) + corps + nez oriente selon le cap
+// Marquage au sol de la base : anneau blanc, 10m de diametre, 1m d'epaisseur
+const basePad3d = new THREE.Mesh(
+  new THREE.RingGeometry(4, 5, 48),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+);
+basePad3d.rotation.x = -Math.PI / 2;
+basePad3d.position.set(0, 0.015, 0);
+scene3d.add(basePad3d);
+
 const droneGroup3d = new THREE.Group();
 scene3d.add(droneGroup3d);
 const body3d = new THREE.Mesh(

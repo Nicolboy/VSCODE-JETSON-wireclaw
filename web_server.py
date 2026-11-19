@@ -453,20 +453,20 @@ const sun = new THREE.DirectionalLight(0xffffff, 0.8);
 sun.position.set(80, 120, 60);
 scene.add(sun);
 
-// --- Sol 200x200m, vert ---
+// --- Sol 400x400m, vert ---
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 200),
+  new THREE.PlaneGeometry(400, 400),
   new THREE.MeshStandardMaterial({ color: 0x2e7d32 })
 );
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
-// --- Repères tous les 25m (grille 200/25 = 8 divisions) ---
-const grid = new THREE.GridHelper(200, 8, 0xffffff, 0xaad4aa);
+// --- Repères tous les 25m (grille 400/16 divisions) ---
+const grid = new THREE.GridHelper(400, 16, 0xffffff, 0xaad4aa);
 grid.position.y = 0.01;
 scene.add(grid);
 
-// Points cardinaux a 95m du centre, pour se reperer avec le cap
+// Points cardinaux a 195m du centre, pour se reperer avec le cap
 function addLabel(text, x, z) {
   const canvas = document.createElement('canvas');
   canvas.width = 128; canvas.height = 64;
@@ -484,10 +484,63 @@ function addLabel(text, x, z) {
   sprite.position.set(x, 3, z);
   scene.add(sprite);
 }
-addLabel('N', 0, -95);
-addLabel('S', 0, 95);
-addLabel('E', 95, 0);
-addLabel('O', -95, 0);
+addLabel('N', 0, -195);
+addLabel('S', 0, 195);
+addLabel('E', 195, 0);
+addLabel('O', -195, 0);
+
+// Decor statique (purement visuel, aucun lien avec la logique de vol qui
+// suppose un sol plat — ne pas en deduire de relief ou de collision).
+function addTree(x, z) {
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.4, 3, 8),
+    new THREE.MeshStandardMaterial({ color: 0x6d4c25 })
+  );
+  trunk.position.set(x, 1.5, z);
+  scene.add(trunk);
+  const foliage = new THREE.Mesh(
+    new THREE.ConeGeometry(2.2, 5, 10),
+    new THREE.MeshStandardMaterial({ color: 0x1b5e20 })
+  );
+  foliage.position.set(x, 5.5, z);
+  scene.add(foliage);
+}
+[[25, 15], [35, -10], [-20, 30], [-30, -25], [15, 45], [50, 20], [-45, 10], [10, -40]]
+  .forEach(([x, z]) => addTree(x, z));
+
+const wall = new THREE.Mesh(
+  new THREE.BoxGeometry(20, 3, 0.5),
+  new THREE.MeshStandardMaterial({ color: 0x9e9e9e })
+);
+wall.position.set(40, 1.5, 10);
+scene.add(wall);
+
+// Pylone electrique (cible d'inspection typique) : fut effile en 4
+// segments carres + deux bras transversaux pour les isolateurs, ~27m.
+function addPylon(x, z) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene.add(group);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+  const heights = [0, 8, 16, 24];
+  const widths = [4, 2.6, 1.4, 0.6];
+  for (let i = 0; i < heights.length - 1; i++) {
+    const h = heights[i + 1] - heights[i];
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(widths[i + 1] / 2, widths[i] / 2, h, 4),
+      mat
+    );
+    seg.position.y = heights[i] + h / 2;
+    seg.rotation.y = Math.PI / 4;
+    group.add(seg);
+  }
+  [20, 26].forEach((y) => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(10, 0.4, 0.4), mat);
+    arm.position.y = y;
+    group.add(arm);
+  });
+}
+addPylon(-50, -30);
 
 // --- Drone : mat (ligne verticale jusqu'au sol) + corps + nez (cap) ---
 const droneGroup = new THREE.Group();
