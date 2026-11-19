@@ -9,6 +9,7 @@ validation en dur + confirmation pour les actions critiques
 filet contre une hallucination du LLM, le dupliquer reviendrait a le
 contourner par un deuxieme chemin non protege.
 """
+import difflib
 import os
 import re
 import subprocess
@@ -20,6 +21,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 WIRECLAW_URL = "http://127.0.0.1:8765"
+
+# Vocabulaire de pilotage connu — sert a la fois d'indice dans le prompt de
+# transcription (guide lfm3-audio vers les mots attendus, plus rapide et
+# plus fiable qu'une transcription libre) et de correction deterministe en
+# sortie (ex. "statue" entendu a la place de "status").
+KNOWN_VOCABULARY = [
+    "status", "position", "altitude", "hover", "orbite",
+    "decolle", "atterris", "monte", "descend", "retour", "base",
+]
+
+
+def correct_known_vocabulary(text: str) -> str:
+    """Corrige, mot par mot, toute transcription proche d'un terme de
+    pilotage connu (ex. "statue" -> "status") sans repasser par le LLM —
+    pur rapprochement de chaines, donc instantane."""
+    words = text.split()
+    corrected = []
+    for word in words:
+        bare = word.strip(".,!?").lower()
+        match = difflib.get_close_matches(bare, KNOWN_VOCABULARY, n=1, cutoff=0.72)
+        corrected.append(match[0] if match else word)
+    return " ".join(corrected)
 
 app = FastAPI()
 app.add_middleware(
@@ -55,7 +78,7 @@ async def confirm(req: ConfirmRequest):
     return r.json()
 
 
-def clean_ollama_cli_output(raw: str) -> str:
+def clean_ollama_cli_output(raw: str, prompt: str = "") -> str:
     """Retire les sequences ANSI (curseur, couleur) et le bloc 'Thinking...'
     laisses par `ollama run` en sortie CLI — il n'y a pas d'equivalent
     --think=false pour la sortie audio via CLI, contrairement a l'API HTTP."""
@@ -66,7 +89,8 @@ def clean_ollama_cli_output(raw: str) -> str:
     if "...done thinking." in text:
         text = text.split("...done thinking.", 1)[1]
     # Le modele echo parfois la consigne en fin de transcription — on la retire si presente.
-    text = re.sub(r"Transcri[bs]e? cet audio en fran[cç]ais,?\s*rien d'autre\.?\s*$", "", text, flags=re.IGNORECASE)
+    if prompt:
+        text = text.replace(prompt, "")
     text = re.sub(r"\n+", " ", text).strip()
     return text
 
@@ -93,14 +117,20 @@ async def transcribe(file: UploadFile = File(...)):
         if conv.returncode != 0:
             return {"error": f"Conversion audio echouee ({len(raw_bytes)} octets recus) : {conv.stderr.strip()}"}
 
+        prompt = (
+            "Transcris cet audio en francais, rien d'autre. "
+            "C'est une commande courte de pilotage de drone, vocabulaire probable : "
+            + ", ".join(KNOWN_VOCABULARY) + "."
+        )
         result = subprocess.run(
-            ["ollama", "run", "lfm3-audio", "Transcris cet audio en francais, rien d'autre.", wav_path],
+            ["ollama", "run", "lfm3-audio", prompt, wav_path],
             capture_output=True, text=True, timeout=90,
         )
         if result.returncode != 0:
             return {"error": f"Transcription echouee : {result.stderr.strip()}"}
 
-    return {"text": clean_ollama_cli_output(result.stdout)}
+    text = correct_known_vocabulary(clean_ollama_cli_output(result.stdout, prompt))
+    return {"text": text}
 
 
 @app.get("/api/status")
