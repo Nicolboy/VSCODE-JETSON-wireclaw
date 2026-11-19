@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WireClaw — Mode d'emploi</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: monospace;
+    background: #0d0d0d;
+    color: #e0e0e0;
+    padding: 24px;
+    max-width: 900px;
+    margin: auto;
+    line-height: 1.6;
+  }
+  h1 { color: #00ff88; font-size: 1.3rem; letter-spacing: 3px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 0.8rem; margin-bottom: 20px; }
+  a { color: #4db8ff; }
+  .panel {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  .panel h2 {
+    font-size: 0.85rem;
+    color: #00ff88;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .panel p { margin-bottom: 10px; color: #ccc; }
+  .panel p:last-child { margin-bottom: 0; }
+  kbd {
+    background: #0a0a0a;
+    border: 1px solid #444;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+    color: #00ff88;
+  }
+  .cmd-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+  }
+  .cmd-group h3 {
+    font-size: 0.72rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .cmd-group ul { list-style: none; }
+  .cmd-group li {
+    font-size: 0.85rem;
+    color: #e0e0e0;
+    padding: 3px 0;
+  }
+  .cmd-group li::before { content: "» "; color: #00ff88; }
+  .cmd-note { color: #666; font-size: 0.75rem; font-style: italic; }
+</style>
+</head>
+<body>
+  <h1>WIRECLAW — MODE D'EMPLOI</h1>
+  <div class="subtitle"><a href="/">&larr; Retour à la commande vocale</a></div>
+
+  <div class="panel">
+    <h2>Prise en main</h2>
+    <p><strong>Micro (push-to-talk)</strong> — maintenir le bouton <kbd>🎙 Maintenir pour parler</kbd> enfoncé (ou la touche <kbd>Espace</kbd>) pendant que vous parlez, puis relâcher. La transcription apparaît automatiquement et la commande est interprétée puis exécutée sans étape supplémentaire.</p>
+    <p><strong>Raccourci clavier</strong> — la touche <kbd>Espace</kbd> fait exactement la même chose que de maintenir le bouton micro, tant que vous n'êtes pas en train de taper dans le champ texte.</p>
+    <p><strong>Ligne de commande texte</strong> — vous pouvez aussi taper une phrase directement dans le champ "Commande texte" et cliquer <kbd>Envoyer</kbd> (ou appuyer sur <kbd>Entrée</kbd>). Même pipeline d'interprétation que la voix.</p>
+    <p><strong>Exécution immédiate</strong> — toute commande validée s'exécute tout de suite, y compris les actions critiques (décollage, atterrissage, déplacement...). Il n'y a pas de confirmation intermédiaire à cette étape du projet — vérifiez ce que vous dites avant de l'envoyer.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Commandes vocales prédéfinies</h2>
+    <div class="cmd-grid">
+      <div class="cmd-group">
+        <h3>Lecture d'état (sans danger)</h3>
+        <ul>
+          <li>status</li>
+          <li>position</li>
+          <li>position gps</li>
+        </ul>
+      </div>
+      <div class="cmd-group">
+        <h3>Décollage</h3>
+        <ul>
+          <li>décolle</li>
+          <li>décollage à 10 mètres</li>
+        </ul>
+        <p class="cmd-note">sans altitude précisée : 2m par défaut</p>
+      </div>
+      <div class="cmd-group">
+        <h3>Atterrissage / retour</h3>
+        <ul>
+          <li>atterris</li>
+          <li>retour à la base</li>
+          <li>rentre</li>
+          <li>rtl</li>
+        </ul>
+        <p class="cmd-note">"retour à la base" revient puis se pose ; "atterris" se pose sur place</p>
+      </div>
+      <div class="cmd-group">
+        <h3>Altitude en vol</h3>
+        <ul>
+          <li>monte à 10 mètres <span class="cmd-note">(absolu)</span></li>
+          <li>monte de 5 mètres <span class="cmd-note">(relatif)</span></li>
+          <li>descend de 3 mètres</li>
+        </ul>
+      </div>
+      <div class="cmd-group">
+        <h3>Maintien de position</h3>
+        <ul>
+          <li>hover</li>
+          <li>maintiens la position</li>
+        </ul>
+      </div>
+      <div class="cmd-group">
+        <h3>Déplacement horizontal</h3>
+        <ul>
+          <li>avance</li>
+          <li>avance de 10 mètres</li>
+          <li>recule de 5 mètres</li>
+          <li>avance à 2 mètres par seconde</li>
+        </ul>
+        <p class="cmd-note">relatif au cap actuel, distance par défaut 2m</p>
+      </div>
+      <div class="cmd-group">
+        <h3>Rotation (relative au cap)</h3>
+        <ul>
+          <li>tourne à gauche</li>
+          <li>tourne à droite de 45 degrés</li>
+          <li>demi-tour</li>
+        </ul>
+      </div>
+      <div class="cmd-group">
+        <h3>Orientation absolue (boussole)</h3>
+        <ul>
+          <li>oriente-toi au nord</li>
+          <li>cap 90 degrés</li>
+        </ul>
+      </div>
+      <div class="cmd-group">
+        <h3>Orbite</h3>
+        <ul>
+          <li>fais une orbite de 15 mètres à 3 mètres par seconde</li>
+        </ul>
+        <p class="cmd-note">toujours préciser rayon/vitesse — "orbite" seul est peu fiable</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Instruments de navigation</h2>
+    <p>Chaque case du panneau "Variables de navigation" a une infobulle — survolez-la avec la souris pour voir son explication. En résumé : latitude/longitude (GPS brut), Nord/Est par rapport à la base (plus lisible, en mètres), altitude AGL (au-dessus du sol) et MSL (au-dessus du niveau de la mer), cap (boussole), vitesse sol et verticale, batterie, mode de vol ArduPilot et état d'armement.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Vue 3D</h2>
+    <p><strong>Vue orbite (par défaut)</strong> — cliquer-glisser pour tourner autour du drone, molette pour zoomer.</p>
+    <p><strong>Vue subjective</strong> — bouton en haut à droite du canvas. Bascule sur une caméra embarquée sur le drone (FOV 50°, inclinée 45° vers le bas, simulant une caméra d'inspection). Le bandeau boussole en haut indique le cap actuel en continu.</p>
+  </div>
+</body>
+</html>

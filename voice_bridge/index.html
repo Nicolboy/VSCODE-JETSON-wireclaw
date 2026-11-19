@@ -118,7 +118,8 @@
     grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     gap: 10px;
   }
-  .nav-item { background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 8px 10px; }
+  .nav-item { background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 8px 10px; cursor: help; }
+  .nav-item .nav-label { border-bottom: 1px dotted #555; display: inline-block; }
   .nav-label { font-size: 0.62rem; color: #666; text-transform: uppercase; letter-spacing: 1px; }
   .nav-value { font-size: 0.95rem; color: #00ff88; margin-top: 2px; }
   .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
@@ -128,7 +129,7 @@
 </head>
 <body>
   <h1>WIRECLAW — COMMANDE VOCALE</h1>
-  <div class="subtitle">Pilotage reel du drone (voix/texte, LFM3) — les actions critiques demandent une confirmation · variables de navigation (SITL)</div>
+  <div class="subtitle">Pilotage reel du drone (voix/texte, LFM3), execution immediate · variables de navigation (SITL) · <a href="/guide.html" style="color:#4db8ff;">mode d'emploi</a></div>
 
   <div class="grid">
     <div>
@@ -136,7 +137,7 @@
       <div class="panel">
         <h2>Micro</h2>
         <div class="mic-row">
-          <button class="btn-main" id="btn-rec">🎙 Maintenir pour parler (PTT)</button>
+          <button class="btn-main" id="btn-rec">🎙 Maintenir pour parler (PTT / Espace)</button>
           <span id="rec-status" style="color:#666; font-size:0.8rem;">inactif</span>
         </div>
         <div class="gain-row">
@@ -174,18 +175,18 @@
       <div class="panel">
         <h2><span class="status-dot bad" id="nav-dot"></span>Variables de navigation (SITL)</h2>
         <div class="nav-grid">
-          <div class="nav-item"><div class="nav-label">Latitude</div><div class="nav-value" id="n-lat">—</div></div>
-          <div class="nav-item"><div class="nav-label">Longitude</div><div class="nav-value" id="n-lon">—</div></div>
-          <div class="nav-item"><div class="nav-label">Nord / base</div><div class="nav-value" id="n-north">—</div></div>
-          <div class="nav-item"><div class="nav-label">Est / base</div><div class="nav-value" id="n-east">—</div></div>
-          <div class="nav-item"><div class="nav-label">Alt AGL</div><div class="nav-value" id="n-alt">—</div></div>
-          <div class="nav-item"><div class="nav-label">Alt MSL</div><div class="nav-value" id="n-abs">—</div></div>
-          <div class="nav-item"><div class="nav-label">Cap</div><div class="nav-value" id="n-heading">—</div></div>
-          <div class="nav-item"><div class="nav-label">Vitesse sol</div><div class="nav-value" id="n-gspeed">—</div></div>
-          <div class="nav-item"><div class="nav-label">Vitesse verticale</div><div class="nav-value" id="n-vspeed">—</div></div>
-          <div class="nav-item"><div class="nav-label">Batterie</div><div class="nav-value" id="n-bat">—</div></div>
-          <div class="nav-item"><div class="nav-label">Mode</div><div class="nav-value" id="n-mode">—</div></div>
-          <div class="nav-item"><div class="nav-label">Armé</div><div class="nav-value" id="n-armed">—</div></div>
+          <div class="nav-item" title="Latitude GPS actuelle du drone"><div class="nav-label">Latitude</div><div class="nav-value" id="n-lat">—</div></div>
+          <div class="nav-item" title="Longitude GPS actuelle du drone"><div class="nav-label">Longitude</div><div class="nav-value" id="n-lon">—</div></div>
+          <div class="nav-item" title="Distance au nord (+) ou au sud (-) du point de décollage, en mètres"><div class="nav-label">Nord / base</div><div class="nav-value" id="n-north">—</div></div>
+          <div class="nav-item" title="Distance à l'est (+) ou à l'ouest (-) du point de décollage, en mètres"><div class="nav-label">Est / base</div><div class="nav-value" id="n-east">—</div></div>
+          <div class="nav-item" title="Altitude au-dessus du sol (Above Ground Level)"><div class="nav-label">Alt AGL</div><div class="nav-value" id="n-alt">—</div></div>
+          <div class="nav-item" title="Altitude au-dessus du niveau de la mer (Mean Sea Level)"><div class="nav-label">Alt MSL</div><div class="nav-value" id="n-abs">—</div></div>
+          <div class="nav-item" title="Direction vers laquelle le drone pointe (boussole, 0° = Nord, sens horaire)"><div class="nav-label">Cap</div><div class="nav-value" id="n-heading">—</div></div>
+          <div class="nav-item" title="Vitesse horizontale actuelle du drone"><div class="nav-label">Vitesse sol</div><div class="nav-value" id="n-gspeed">—</div></div>
+          <div class="nav-item" title="Vitesse de montée (+) ou de descente (-)"><div class="nav-label">Vitesse verticale</div><div class="nav-value" id="n-vspeed">—</div></div>
+          <div class="nav-item" title="Niveau de charge de la batterie"><div class="nav-label">Batterie</div><div class="nav-value" id="n-bat">—</div></div>
+          <div class="nav-item" title="Mode de vol ArduPilot actuel (ex. GUIDED, RTL, LAND, STABILIZE)"><div class="nav-label">Mode</div><div class="nav-value" id="n-mode">—</div></div>
+          <div class="nav-item" title="Moteurs actifs (OUI) ou non (NON) — le drone ne peut décoller que s'il est armé"><div class="nav-label">Armé</div><div class="nav-value" id="n-armed">—</div></div>
         </div>
       </div>
     </div>
@@ -286,8 +287,21 @@ btnRec.addEventListener('mouseleave', pttStop);
 btnRec.addEventListener('touchend', pttStop);
 btnRec.addEventListener('touchcancel', pttStop);
 
+// Raccourci clavier : barre d'espace = PTT, sauf si on est en train de
+// taper dans un champ texte (pour ne pas intercepter la saisie).
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space') return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  pttStart(e);
+});
+document.addEventListener('keyup', (e) => {
+  if (e.code !== 'Space') return;
+  pttStop(e);
+});
+
 async function onRecordingStop() {
-  btnRec.textContent = '🎙 Maintenir pour parler (PTT)';
+  btnRec.textContent = '🎙 Maintenir pour parler (PTT / Espace)';
   btnRec.classList.remove('recording');
   recStat.textContent = 'transcription en cours...';
   const blob = new Blob(chunks, { type: 'audio/webm' });
