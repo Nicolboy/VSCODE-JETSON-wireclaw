@@ -18,7 +18,7 @@ from config import (OLLAMA_URL, LFM3_MODEL,
 MAX_ALTITUDE_M      = 50.0
 GEOFENCE_RADIUS_M   = 500.0
 MAX_ORBIT_RADIUS_M  = 100.0
-MAX_MOVE_DISTANCE_M = 20.0
+MAX_MOVE_DISTANCE_M = 50.0
 MAX_YAW_ANGLE_DEG   = 180.0
 CONFIRM_TTL_S       = 30
 
@@ -35,7 +35,7 @@ DEFAULT_YAW_ANGLE_DEG      = 90.0
 # explicite de l'operateur avant execution. Le reste (lecture d'etat) s'execute
 # immediatement.
 CRITICAL_ACTIONS = {"takeoff", "land", "rtl", "goto", "orbit", "altitude",
-                     "forward", "backward", "left", "right", "uturn"}
+                     "forward", "backward", "left", "right", "uturn", "heading"}
 KNOWN_ACTIONS = CRITICAL_ACTIONS | {"hover", "status", "position", "position_gps"}
 
 SYSTEM_PROMPT = f"""Tu es WireClaw, cerveau d'un drone d'inspection autonome.
@@ -43,11 +43,12 @@ Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
 Le champ "message" est TOUJOURS en francais.
 Format :
 {{
-  "action": "takeoff | land | rtl | hover | goto | orbit | status | position | altitude | position_gps | forward | backward | left | right | uturn",
+  "action": "takeoff | land | rtl | hover | goto | orbit | status | position | altitude | position_gps | forward | backward | left | right | uturn | heading",
   "altitude": <float metres AGL, defaut 15. Utilise pour altitude cible absolue : "monte a 10m" → 10>,
   "delta": <float|null. Variation verticale relative : "monte de 5m" → 5, "descend de 3m" → -3, null sinon>,
   "distance": <float metres, pour forward/backward uniquement : "avance de 10m" → 10, null si non precise>,
-  "angle": <float degres, pour left/right uniquement : "tourne a gauche de 45 degres" → 45, null si non precise>,
+  "angle": <float degres, pour left/right uniquement (rotation RELATIVE au cap actuel) : "tourne a gauche de 45 degres" → 45, null si non precise>,
+  "heading": <float degres 0-360, pour l'action "heading" uniquement (cap ABSOLU, boussole) : nord=0, est=90, sud=180, ouest=270>,
   "lat": <float, pour goto>,
   "lon": <float, pour goto>,
   "radius": <float metres, pour orbit, defaut 10>,
@@ -73,6 +74,7 @@ Exemple a ne pas confondre : "monte a 5m" -> altitude=5, delta=null. "monte de 5
 "gauche" / "tourne a gauche [de X degres]" -> action="left", angle=X si precise sinon null.
 "droite" / "tourne a droite [de X degres]" -> action="right", angle=X si precise sinon null.
 "demi-tour" -> action="uturn" (toujours 180 degres, pas de direction a choisir).
+"oriente-toi au nord/sud/est/ouest" ou "cap X degres" ou "oriente-toi vers X degres" (orientation ABSOLUE, pas "a gauche"/"a droite") -> action="heading", heading=X (nord=0, est=90, sud=180, ouest=270 si direction cardinale nommee).
 Les nombres peuvent etre dictes en toutes lettres (ex. "dix" = 10, "cinq" = 5, "huit" = 8) : les convertir systematiquement en chiffre dans "altitude"/"delta"/"distance"/"angle"/"radius"/"speed", ne jamais les laisser a leur valeur par defaut quand un nombre a ete prononce.
 "orbite"/"orbit" seul, sans rayon ni vitesse precises -> radius=10, speed=2 EXACTEMENT (les valeurs par defaut ci-dessus), jamais d'autre nombre invente.
 """
@@ -118,13 +120,16 @@ def send_orbit_cmd(radius, speed, lat, lon, abs_alt):
         34, 0, radius, speed, 0, float('nan'), lat, lon, abs_alt
     )
 
-def send_yaw_cmd(angle_deg, direction):
-    """MAV_CMD_CONDITION_YAW (115) : rotation relative au cap actuel.
-    direction : -1 = sens anti-horaire (gauche), 1 = sens horaire (droite)."""
+def send_yaw_cmd(angle_deg, direction, relative=1):
+    """MAV_CMD_CONDITION_YAW (115).
+    relative=1 : angle_deg est une rotation relative au cap actuel (gauche/droite/demi-tour).
+    relative=0 : angle_deg est un cap absolu a atteindre (verrouillage de cap avant un
+    deplacement forward/backward — direction=0 laisse ArduPilot choisir le sens le plus court).
+    direction : -1 = sens anti-horaire, 1 = sens horaire, 0 = le plus court (relative=0 seulement)."""
     mav.mav.command_long_send(
         mav.target_system, mav.target_component,
         115, 0,
-        angle_deg, 0, direction, 1,  # param2=vitesse yaw (0=defaut), param4=1 -> relatif
+        angle_deg, 0, direction, relative,  # param2=vitesse yaw (0=defaut), param4=relatif/absolu
         0, 0, 0
     )
 
@@ -356,6 +361,13 @@ def validate_command(cmd):
         if not (0.0 < angle <= MAX_YAW_ANGLE_DEG):
             raise ValueError(f"angle {angle:.0f}° hors limite (0, {MAX_YAW_ANGLE_DEG:.0f}]°")
 
+    elif action == "heading":
+        heading = cmd.get("heading")
+        if heading is None:
+            raise ValueError("heading sans cap precise")
+        if not (0.0 <= float(heading) < 360.0):
+            raise ValueError(f"cap {float(heading):.0f}° hors limite [0, 360)°")
+
 def describe_command(cmd):
     """Resume factuel derive des champs numeriques valides — pas du champ
     "message" (texte libre genere par le LLM, donc pas fiable pour une
@@ -378,6 +390,8 @@ def describe_command(cmd):
         angle = 180.0 if action == "uturn" else _yaw_angle(cmd)
         verb = {"left": "tourne a gauche", "right": "tourne a droite", "uturn": "demi-tour"}[action]
         return f"{verb} → {angle:.0f}°"
+    if action == "heading":
+        return f"heading → cap {float(cmd.get('heading', 0)):.0f}°"
     return action
 
 async def execute_command(drone, cmd):
@@ -515,10 +529,17 @@ async def execute_command(drone, cmd):
             await asyncio.sleep(8)
         await refresh_position(drone)
         distance = _move_distance(cmd)
+        heading = current_pos["heading"]
         signed = distance if action == "forward" else -distance
         target_lat, target_lon = _offset_position(
-            current_pos["lat"], current_pos["lon"], current_pos["heading"], signed
+            current_pos["lat"], current_pos["lon"], heading, signed
         )
+        # WP_YAW_BEHAVIOR=0 (sitl_params.parm) empeche ArduCopter de tourner
+        # pour faire face au point cible pendant un goto_location — sans ca,
+        # "recule" (cible derriere le drone) finissait par un demi-tour
+        # complet au lieu de garder le cap d'origine (teste : un verrouillage
+        # via MAV_CMD_CONDITION_YAW juste avant n'etait pas suffisant, le
+        # goto_location semble reprendre la main sur le yaw aussitot apres).
         await drone.action.goto_location(target_lat, target_lon, current_pos["abs_alt"], float('nan'))
         await asyncio.sleep(4)
         await refresh_position(drone)
@@ -529,6 +550,11 @@ async def execute_command(drone, cmd):
         direction = -1 if action == "left" else 1
         send_yaw_cmd(angle, direction)
         return "OK " + msg
+
+    elif action == "heading":
+        target_heading = float(cmd["heading"]) % 360
+        send_yaw_cmd(target_heading, 0, relative=0)
+        return f"OK {msg} — cap cible {target_heading:.0f}°"
 
     elif action == "position_gps":
         import datetime

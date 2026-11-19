@@ -498,7 +498,7 @@ const nose = new THREE.Mesh(
   new THREE.ConeGeometry(0.4, 1.4, 12),
   new THREE.MeshStandardMaterial({ color: 0x00ff88 })
 );
-nose.rotation.x = Math.PI / 2;
+nose.rotation.x = -Math.PI / 2; // apex vers l'exterieur (cap), pas vers le centre du corps
 nose.position.set(0, 0, -1.3);
 droneGroup.add(nose);
 
