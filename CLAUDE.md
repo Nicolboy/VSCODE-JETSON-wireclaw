@@ -5,6 +5,13 @@ WireClaw est un système de pilotage de drone en langage naturel.
 L'opérateur donne des instructions en français (texte ou voix),
 un LLM les interprète et génère des commandes MAVLink vers ArduPilot.
 
+**Interface principale (voix + texte + simulation 3D) : https://sable.nicolasboyer.com**
+Page publique unique (proxiee par nginx vers `voice_bridge` sur le Jetson,
+voir §Sécurité des commandes) : commande vocale/texte, résumé de résultat,
+instruments de navigation (cap, vitesse, position), et vue 3D (sol
+200x200m, repères tous les 25m, vue orbitale ou subjective FOV 50°/45° bas,
+bandeau boussole).
+
 ## Architecture
 - **Jetson Orin Nano 8Go** : station sol, héberge WireClaw + SITL
 - **ESP32 DevKitV4** : relais WiFi↔UART (firmware PlatformIO sur Windows)
