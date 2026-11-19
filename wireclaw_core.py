@@ -1,23 +1,20 @@
 import asyncio
 import json
 import math
-from google import genai
-from google.genai import types
+import httpx
 from mavsdk import System
 from mavsdk.mission import MissionItem, MissionPlan
 from pymavlink import mavutil
-from config import (GEMINI_API_KEY, GEMINI_MODEL,
+from config import (OLLAMA_URL, LFM3_MODEL,
                     MAVLINK_ADDRESS, MAVLINK_PYMAV,
                     BASE_LAT, BASE_LON)
-
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 SYSTEM_PROMPT = f"""Tu es WireClaw, cerveau d'un drone d'inspection autonome.
 Reponds UNIQUEMENT avec un objet JSON valide, sans markdown.
 Le champ "message" est TOUJOURS en francais.
 Format :
 {{
-  "action": "takeoff (decollage initial) | land (atterrissage) | rtl (retour base) | hover (maintien position) | goto (aller vers coordonnees) | orbit (tourner en rond) | status (etat general du drone) | position (position rapide lat/lon/alt) | altitude (changer la hauteur en vol) | position_gps (position GPS complete : horodatage HH:MM:SS + fix + satellites)",
+  "action": "takeoff | land | rtl | hover | goto | orbit | status | position | altitude | position_gps",
   "altitude": <float metres AGL, defaut 15. Utilise pour altitude cible absolue : "monte a 10m" → 10>,
   "delta": <float|null. Variation relative : "monte de 5m" → 5, "descend de 3m" → -3, null sinon>,
   "lat": <float, pour goto>,
@@ -30,6 +27,9 @@ Position de base : lat={BASE_LAT}, lon={BASE_LON}.
 Pour goto, calcule des coordonnees proches (max 500m en test).
 Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 1 degre lat = 111320m, 1 degre lon = 111320*cos(lat)m
+"decolle" / "decolle a Xm" (premier envol depuis le sol) -> action="takeoff" TOUJOURS, jamais "altitude".
+"monte de X metres" ou "descend de X metres" (variation verticale en vol, pas un premier decollage) -> action="altitude", jamais "rtl", "goto" ni "takeoff".
+"retour a la base" / "rentre" / "rtl" -> action="rtl" (vol retour puis atterrissage auto), distinct de "atterris"/"land" (pose immediate sur place).
 """
 
 ARDUCOPTER_MODES = {
@@ -109,20 +109,20 @@ async def monitor_telemetry(drone):
         await asyncio.sleep(1)
 
 async def interpret_command(text):
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=text,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.1,
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={
+                "model": LFM3_MODEL,
+                "system": SYSTEM_PROMPT,
+                "prompt": text,
+                "think": False,
+                "format": "json",
+                "stream": False,
+            },
         )
-    )
-    raw = response.text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+    data = r.json()
+    return json.loads(data["response"])
 
 async def execute_command(drone, cmd):
     global drone_armed

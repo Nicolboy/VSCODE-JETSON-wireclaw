@@ -3,8 +3,8 @@ import os
 
 load_dotenv()
 
-GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL     = "gemini-2.5-flash"
+OLLAMA_URL       = "http://127.0.0.1:11434"
+LFM3_MODEL       = "lfm3"
 MAVLINK_ADDRESS  = "udp://:14551"
 MAVLINK_PYMAV    = "udpin:0.0.0.0:14552"
 NATS_SERVER      = "nats://localhost:4222"
