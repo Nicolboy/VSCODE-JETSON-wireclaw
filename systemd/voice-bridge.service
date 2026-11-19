@@ -1,0 +1,15 @@
+[Unit]
+Description=WireClaw Voice/Text Test Bridge (LFM3)
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=nicoboy
+WorkingDirectory=/home/nicoboy/wireclaw-jetson/voice_bridge
+ExecStart=/home/nicoboy/.local/bin/uvicorn main:app --host 127.0.0.1 --port 8766
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
