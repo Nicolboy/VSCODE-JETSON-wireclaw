@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WireClaw — Commande vocale</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -189,6 +191,11 @@
     </div>
   </div>
 
+  <div class="panel">
+    <h2>Simulation 3D</h2>
+    <div id="canvas3d-wrap" style="width:100%; height:480px; border-radius:4px; overflow:hidden;"></div>
+  </div>
+
 <script>
 const API = '/api';
 
@@ -370,6 +377,106 @@ function cardinal(deg) {
   return CARDINALS[Math.round(deg / 45) % 8];
 }
 
+/* ---------- Simulation 3D (Three.js, cote navigateur uniquement) ---------- */
+const canvas3dWrap = document.getElementById('canvas3d-wrap');
+const scene3d = new THREE.Scene();
+scene3d.background = new THREE.Color(0x87ceeb); // ciel bleu
+
+const camera3d = new THREE.PerspectiveCamera(60, canvas3dWrap.clientWidth / canvas3dWrap.clientHeight, 0.1, 2000);
+camera3d.position.set(-60, 45, 90);
+
+const renderer3d = new THREE.WebGLRenderer({ antialias: true });
+renderer3d.setSize(canvas3dWrap.clientWidth, canvas3dWrap.clientHeight);
+renderer3d.setPixelRatio(window.devicePixelRatio);
+canvas3dWrap.appendChild(renderer3d.domElement);
+
+const controls3d = new THREE.OrbitControls(camera3d, renderer3d.domElement);
+controls3d.target.set(0, 5, 0);
+controls3d.enableDamping = true;
+controls3d.dampingFactor = 0.08;
+controls3d.maxPolarAngle = Math.PI / 2 - 0.02;
+controls3d.update();
+
+scene3d.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun3d = new THREE.DirectionalLight(0xffffff, 0.8);
+sun3d.position.set(80, 120, 60);
+scene3d.add(sun3d);
+
+// Sol 200x200m vert
+const ground3d = new THREE.Mesh(
+  new THREE.PlaneGeometry(200, 200),
+  new THREE.MeshStandardMaterial({ color: 0x2e7d32 })
+);
+ground3d.rotation.x = -Math.PI / 2;
+scene3d.add(ground3d);
+
+// Repères tous les 25m (grille 200/8 divisions)
+const grid3d = new THREE.GridHelper(200, 8, 0xffffff, 0xaad4aa);
+grid3d.position.y = 0.01;
+scene3d.add(grid3d);
+
+function addLabel3d(text, x, z) {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(13,13,13,0.7)';
+  ctx.fillRect(0, 0, 128, 64);
+  ctx.fillStyle = '#00ff88';
+  ctx.font = 'bold 40px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 64, 32);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+  sprite.scale.set(10, 5, 1);
+  sprite.position.set(x, 3, z);
+  scene3d.add(sprite);
+}
+addLabel3d('N', 0, -95);
+addLabel3d('S', 0, 95);
+addLabel3d('E', 95, 0);
+addLabel3d('O', -95, 0);
+
+// Drone : mat (sol -> altitude) + corps + nez oriente selon le cap
+const droneGroup3d = new THREE.Group();
+scene3d.add(droneGroup3d);
+droneGroup3d.add(new THREE.Mesh(
+  new THREE.CylinderGeometry(0.9, 0.9, 0.4, 16),
+  new THREE.MeshStandardMaterial({ color: 0xff8800 })
+));
+const nose3d = new THREE.Mesh(
+  new THREE.ConeGeometry(0.4, 1.4, 12),
+  new THREE.MeshStandardMaterial({ color: 0x00ff88 })
+);
+nose3d.rotation.x = Math.PI / 2;
+nose3d.position.set(0, 0, -1.3);
+droneGroup3d.add(nose3d);
+
+let mastGeom3d = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+const mast3d = new THREE.Line(mastGeom3d, new THREE.LineBasicMaterial({ color: 0x444444 }));
+scene3d.add(mast3d);
+
+function animate3d() {
+  requestAnimationFrame(animate3d);
+  controls3d.update();
+  renderer3d.render(scene3d, camera3d);
+}
+animate3d();
+
+window.addEventListener('resize', () => {
+  camera3d.aspect = canvas3dWrap.clientWidth / canvas3dWrap.clientHeight;
+  camera3d.updateProjectionMatrix();
+  renderer3d.setSize(canvas3dWrap.clientWidth, canvas3dWrap.clientHeight);
+});
+
+function update3d(d) {
+  const x = d.east_m;
+  const z = -d.north_m;
+  const y = Math.max(d.alt, 0.2);
+  droneGroup3d.position.set(x, y, z);
+  droneGroup3d.rotation.y = -THREE.MathUtils.degToRad(d.heading);
+  mastGeom3d.setFromPoints([new THREE.Vector3(x, 0, z), new THREE.Vector3(x, y, z)]);
+}
+
 async function refreshStatus() {
   const dot = document.getElementById('nav-dot');
   try {
@@ -391,6 +498,7 @@ async function refreshStatus() {
     elArmed.textContent = d.armed ? 'OUI' : 'NON';
     elArmed.style.color = d.armed ? '#ff8800' : '#00ff88';
     dot.className = 'status-dot ok';
+    update3d(d);
   } catch (_) {
     dot.className = 'status-dot bad';
   }
