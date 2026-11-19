@@ -98,18 +98,19 @@ en dur, indépendamment du modèle.
   `MAX_ALTITUDE_M` (50 m), la cible `goto` dépasse `GEOFENCE_RADIUS_M`
   (500 m autour de `BASE_LAT`/`BASE_LON`), ou le rayon d'orbite dépasse
   `MAX_ORBIT_RADIUS_M` (100 m).
-- Les actions qui déplacent/arment/posent le drone (`CRITICAL_ACTIONS` :
-  takeoff, land, rtl, goto, orbit, altitude) ne s'exécutent jamais
-  directement : `process_text()` les met en attente
-  (`stage_command()`/`token`, TTL 30 s) et affiche un résumé **dérivé des
-  champs numériques validés**, pas du texte libre du modèle (`message` du
-  LLM n'est montré qu'entre parenthèses, à titre indicatif). L'opérateur
-  doit appeler `POST /command/confirm` avec le jeton pour déclencher
-  `execute_command()`. Les actions de lecture (status, position,
-  position_gps, hover) s'exécutent immédiatement, sans confirmation.
-- Ne jamais faire exécuter une action critique sans passer par ce circuit
-  interpréter → valider → (confirmer) → exécuter, même pour un ajout futur
-  de code — c'est le seul filet contre une hallucination du LLM.
+- **2026-11-19 : la confirmation préalable des actions critiques a été
+  retirée** (demande explicite — ralentissait les tests). `process_text()`
+  exécute désormais toute commande validée immédiatement, critique ou non
+  (`takeoff`, `land`, `rtl`, `goto`, `orbit`, `altitude`, `forward`,
+  `backward`, `left`, `right`, `uturn` compris). `validate_command()` reste
+  le seul filet actif contre une hallucination — pas de deuxième passe
+  humaine avant exécution. `stage_command()`/`pop_confirmed()`/
+  `confirm_pending()` et `POST /command/confirm` restent dans le code
+  (inutilisés par le flux normal) au cas où la confirmation serait
+  réactivée.
+- Ne jamais faire exécuter une action sans passer par `validate_command()`
+  d'abord, même pour un ajout futur de code — c'est le seul filet restant
+  contre une hallucination du LLM.
 - `voice_bridge/` (service `voice-bridge.service`, port 8766, exposé
   publiquement via `sable.nicolasboyer.com`) pilote réellement le drone
   depuis le 2026-11-19 : `/api/interpret` et `/api/interpret/confirm` ne
