@@ -44,14 +44,20 @@ async def confirm(req: ConfirmRequest):
 async def status():
     # Lecture pure depuis les caches mis à jour par les tâches de fond —
     # aucun appel bloquant, réponse instantanée
+    north_m, east_m = wireclaw_core.local_offset_m()
     return {
-        "lat":     wireclaw_core.current_pos["lat"],
-        "lon":     wireclaw_core.current_pos["lon"],
-        "alt":     round(wireclaw_core.current_pos["alt"], 2),
-        "abs_alt": round(wireclaw_core.current_pos["abs_alt"], 2),
-        "battery": round(wireclaw_core.telemetry_cache["battery"], 1),
-        "mode":    wireclaw_core.telemetry_cache["mode"],
-        "armed":   wireclaw_core.drone_armed,
+        "lat":            wireclaw_core.current_pos["lat"],
+        "lon":            wireclaw_core.current_pos["lon"],
+        "alt":            round(wireclaw_core.current_pos["alt"], 2),
+        "abs_alt":        round(wireclaw_core.current_pos["abs_alt"], 2),
+        "battery":        round(wireclaw_core.telemetry_cache["battery"], 1),
+        "mode":           wireclaw_core.telemetry_cache["mode"],
+        "armed":          wireclaw_core.drone_armed,
+        "heading":        round(wireclaw_core.current_pos["heading"], 1),
+        "ground_speed":   round(wireclaw_core.current_pos["ground_speed"], 2),
+        "vertical_speed": round(wireclaw_core.current_pos["vertical_speed"], 2),
+        "north_m":        round(north_m, 1),
+        "east_m":         round(east_m, 1),
     }
 
 
@@ -190,12 +196,32 @@ HTML = """<!DOCTYPE html>
       <div class="stat-value" id="s-lon">—</div>
     </div>
     <div>
+      <div class="stat-label">Nord / base (m)</div>
+      <div class="stat-value" id="s-north">—</div>
+    </div>
+    <div>
+      <div class="stat-label">Est / base (m)</div>
+      <div class="stat-value" id="s-east">—</div>
+    </div>
+    <div>
       <div class="stat-label">Altitude AGL</div>
       <div class="stat-value" id="s-alt">—</div>
     </div>
     <div>
       <div class="stat-label">Alt MSL</div>
       <div class="stat-value" id="s-abs">—</div>
+    </div>
+    <div>
+      <div class="stat-label">Cap</div>
+      <div class="stat-value" id="s-heading">—</div>
+    </div>
+    <div>
+      <div class="stat-label">Vitesse sol</div>
+      <div class="stat-value" id="s-gspeed">—</div>
+    </div>
+    <div>
+      <div class="stat-label">Vitesse verticale</div>
+      <div class="stat-value" id="s-vspeed">—</div>
     </div>
     <div>
       <div class="stat-label">Batterie</div>
@@ -313,17 +339,27 @@ HTML = """<!DOCTYPE html>
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    const CARDINALS = ['N','NE','E','SE','S','SO','O','NO'];
+    function cardinal(deg) {
+      return CARDINALS[Math.round(deg / 45) % 8];
+    }
+
     async function refreshStatus() {
       try {
         const r = await fetch('/status');
         if (!r.ok) return;
         const d = await r.json();
-        document.getElementById('s-lat').textContent  = d.lat.toFixed(6);
-        document.getElementById('s-lon').textContent  = d.lon.toFixed(6);
-        document.getElementById('s-alt').textContent  = d.alt.toFixed(1) + ' m';
-        document.getElementById('s-abs').textContent  = d.abs_alt.toFixed(1) + ' m';
-        document.getElementById('s-bat').textContent  = d.battery.toFixed(0) + ' %';
-        document.getElementById('s-mode').textContent = d.mode;
+        document.getElementById('s-lat').textContent    = d.lat.toFixed(6);
+        document.getElementById('s-lon').textContent    = d.lon.toFixed(6);
+        document.getElementById('s-north').textContent  = (d.north_m >= 0 ? '+' : '') + d.north_m.toFixed(1) + ' m';
+        document.getElementById('s-east').textContent   = (d.east_m >= 0 ? '+' : '') + d.east_m.toFixed(1) + ' m';
+        document.getElementById('s-alt').textContent    = d.alt.toFixed(1) + ' m';
+        document.getElementById('s-abs').textContent    = d.abs_alt.toFixed(1) + ' m';
+        document.getElementById('s-heading').textContent = d.heading.toFixed(0) + '° ' + cardinal(d.heading);
+        document.getElementById('s-gspeed').textContent  = d.ground_speed.toFixed(1) + ' m/s';
+        document.getElementById('s-vspeed').textContent  = (d.vertical_speed >= 0 ? '+' : '') + d.vertical_speed.toFixed(1) + ' m/s';
+        document.getElementById('s-bat').textContent    = d.battery.toFixed(0) + ' %';
+        document.getElementById('s-mode').textContent   = d.mode;
         const el = document.getElementById('s-armed');
         el.textContent   = d.armed ? 'OUI' : 'NON';
         el.style.color   = d.armed ? '#ff8800' : '#00ff88';

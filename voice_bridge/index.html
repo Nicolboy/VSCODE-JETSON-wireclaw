@@ -174,8 +174,13 @@
         <div class="nav-grid">
           <div class="nav-item"><div class="nav-label">Latitude</div><div class="nav-value" id="n-lat">—</div></div>
           <div class="nav-item"><div class="nav-label">Longitude</div><div class="nav-value" id="n-lon">—</div></div>
+          <div class="nav-item"><div class="nav-label">Nord / base</div><div class="nav-value" id="n-north">—</div></div>
+          <div class="nav-item"><div class="nav-label">Est / base</div><div class="nav-value" id="n-east">—</div></div>
           <div class="nav-item"><div class="nav-label">Alt AGL</div><div class="nav-value" id="n-alt">—</div></div>
           <div class="nav-item"><div class="nav-label">Alt MSL</div><div class="nav-value" id="n-abs">—</div></div>
+          <div class="nav-item"><div class="nav-label">Cap</div><div class="nav-value" id="n-heading">—</div></div>
+          <div class="nav-item"><div class="nav-label">Vitesse sol</div><div class="nav-value" id="n-gspeed">—</div></div>
+          <div class="nav-item"><div class="nav-label">Vitesse verticale</div><div class="nav-value" id="n-vspeed">—</div></div>
           <div class="nav-item"><div class="nav-label">Batterie</div><div class="nav-value" id="n-bat">—</div></div>
           <div class="nav-item"><div class="nav-label">Mode</div><div class="nav-value" id="n-mode">—</div></div>
           <div class="nav-item"><div class="nav-label">Armé</div><div class="nav-value" id="n-armed">—</div></div>
@@ -360,18 +365,28 @@ function esc(s) {
 }
 
 /* ---------- Variables de navigation (polling) ---------- */
+const CARDINALS = ['N','NE','E','SE','S','SO','O','NO'];
+function cardinal(deg) {
+  return CARDINALS[Math.round(deg / 45) % 8];
+}
+
 async function refreshStatus() {
   const dot = document.getElementById('nav-dot');
   try {
     const r = await fetch(`${API}/status`);
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    document.getElementById('n-lat').textContent  = d.lat.toFixed(6);
-    document.getElementById('n-lon').textContent  = d.lon.toFixed(6);
-    document.getElementById('n-alt').textContent  = d.alt.toFixed(1) + ' m';
-    document.getElementById('n-abs').textContent  = d.abs_alt.toFixed(1) + ' m';
-    document.getElementById('n-bat').textContent  = d.battery.toFixed(0) + ' %';
-    document.getElementById('n-mode').textContent = d.mode;
+    document.getElementById('n-lat').textContent    = d.lat.toFixed(6);
+    document.getElementById('n-lon').textContent    = d.lon.toFixed(6);
+    document.getElementById('n-north').textContent  = (d.north_m >= 0 ? '+' : '') + d.north_m.toFixed(1) + ' m';
+    document.getElementById('n-east').textContent   = (d.east_m >= 0 ? '+' : '') + d.east_m.toFixed(1) + ' m';
+    document.getElementById('n-alt').textContent    = d.alt.toFixed(1) + ' m';
+    document.getElementById('n-abs').textContent    = d.abs_alt.toFixed(1) + ' m';
+    document.getElementById('n-heading').textContent = d.heading.toFixed(0) + '° ' + cardinal(d.heading);
+    document.getElementById('n-gspeed').textContent  = d.ground_speed.toFixed(1) + ' m/s';
+    document.getElementById('n-vspeed').textContent  = (d.vertical_speed >= 0 ? '+' : '') + d.vertical_speed.toFixed(1) + ' m/s';
+    document.getElementById('n-bat').textContent    = d.battery.toFixed(0) + ' %';
+    document.getElementById('n-mode').textContent   = d.mode;
     const elArmed = document.getElementById('n-armed');
     elArmed.textContent = d.armed ? 'OUI' : 'NON';
     elArmed.style.color = d.armed ? '#ff8800' : '#00ff88';

@@ -88,8 +88,13 @@ ARDUCOPTER_MODES = {
 }
 
 drone_armed = False
-current_pos = {"lat": BASE_LAT, "lon": BASE_LON, "alt": 0, "abs_alt": 584, "heading": 0.0}
+current_pos = {"lat": BASE_LAT, "lon": BASE_LON, "alt": 0, "abs_alt": 584, "heading": 0.0,
+               "ground_speed": 0.0, "vertical_speed": 0.0}
 telemetry_cache = {"battery": -1.0, "mode": "UNKNOWN", "gps_fix": "UNKNOWN", "gps_sats": 0}
+# Position de decollage reelle (home ArduPilot, fixee a l'armement) — permet
+# d'afficher la position courante en metres nord/est plutot qu'en GPS brut,
+# bien plus lisible pour un operateur au sol.
+home_pos = {"lat": None, "lon": None}
 mav = None
 drone = None
 
@@ -161,6 +166,36 @@ async def monitor_heading(drone):
         except Exception:
             pass
         await asyncio.sleep(1)
+
+async def monitor_velocity(drone):
+    """Vitesse sol et vitesse verticale (instruments de navigation de base,
+    comme un avion : cap, vitesse, variomètre)."""
+    while True:
+        try:
+            async for v in drone.telemetry.velocity_ned():
+                current_pos["ground_speed"] = math.hypot(v.north_m_s, v.east_m_s)
+                current_pos["vertical_speed"] = -v.down_m_s  # positif = monte
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(1)
+
+async def monitor_home(drone):
+    """Capture la position de decollage reelle (home ArduPilot, fixee a
+    l'armement) — sert a convertir la position GPS courante en metres
+    nord/est par rapport au point de depart, plus lisible qu'un lat/lon
+    brut pour un operateur au sol."""
+    async for home in drone.telemetry.home():
+        home_pos["lat"] = home.latitude_deg
+        home_pos["lon"] = home.longitude_deg
+
+def local_offset_m():
+    """Position actuelle en metres (nord, est) par rapport a home_pos."""
+    if home_pos["lat"] is None:
+        return 0.0, 0.0
+    north = (current_pos["lat"] - home_pos["lat"]) * 111320
+    east = (current_pos["lon"] - home_pos["lon"]) * 111320 * math.cos(math.radians(home_pos["lat"]))
+    return north, east
 
 async def monitor_telemetry(drone):
     """Sonde batterie, mode et GPS par polling — pause 1s entre chaque cycle
@@ -586,6 +621,8 @@ async def init():
             asyncio.create_task(monitor_telemetry(drone))
             asyncio.create_task(monitor_position(drone))
             asyncio.create_task(monitor_heading(drone))
+            asyncio.create_task(monitor_velocity(drone))
+            asyncio.create_task(monitor_home(drone))
             break
 
 async def main():
