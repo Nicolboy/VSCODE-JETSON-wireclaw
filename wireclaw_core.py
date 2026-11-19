@@ -99,6 +99,18 @@ async def monitor_armed(drone):
         drone_armed = is_armed
         await asyncio.sleep(0)  # cède le contrôle après chaque mise à jour
 
+async def monitor_position(drone):
+    """Rafraichit lat/lon/alt en continu — sans cette tache, current_pos ne
+    bouge que lorsqu'une commande (status/goto/...) appelle refresh_position()
+    explicitement, et /status affiche alors une position figee entre deux
+    commandes."""
+    while True:
+        try:
+            await refresh_position(drone)
+        except Exception:
+            pass
+        await asyncio.sleep(1)
+
 async def monitor_telemetry(drone):
     """Sonde batterie, mode et GPS par polling — pause 1s entre chaque cycle
     pour ne pas saturer l'event loop asyncio avec des streams gRPC continus."""
@@ -432,6 +444,7 @@ async def init():
                 break
             asyncio.create_task(monitor_armed(drone))
             asyncio.create_task(monitor_telemetry(drone))
+            asyncio.create_task(monitor_position(drone))
             break
 
 async def main():
