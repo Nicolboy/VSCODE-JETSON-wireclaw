@@ -22,11 +22,11 @@ MAX_MOVE_DISTANCE_M = 20.0
 MAX_YAW_ANGLE_DEG   = 180.0
 CONFIRM_TTL_S       = 30
 
-# Altitude par defaut quand aucune n'est precisee : 1m pour un premier envol
+# Altitude par defaut quand aucune n'est precisee : 2m pour un premier envol
 # seul ("decolle"/"decollage" sans valeur — tests au banc, pas de saut a
 # 15m par defaut), 15m pour les autres usages (goto, orbit, changement
 # d'altitude en vol).
-DEFAULT_TAKEOFF_ALTITUDE_M = 1.0
+DEFAULT_TAKEOFF_ALTITUDE_M = 2.0
 DEFAULT_ALTITUDE_M         = 15.0
 DEFAULT_MOVE_DISTANCE_M    = 2.0
 DEFAULT_YAW_ANGLE_DEG      = 90.0
@@ -215,7 +215,7 @@ def _target_altitude(cmd, default_alt=DEFAULT_ALTITUDE_M):
     default_alt — 1m pour un takeoff seul, 15m sinon).
     En vol, delta s'applique normalement comme variation relative."""
     alt = float(cmd.get("altitude") or default_alt)
-    if current_pos["alt"] < 2.0:
+    if not drone_armed:
         return alt
     delta = cmd.get("delta")
     return current_pos["alt"] + float(delta) if delta is not None else alt
@@ -254,7 +254,7 @@ def validate_command(cmd):
         raise ValueError(f"action inconnue : {action!r}")
 
     if action in ("takeoff", "altitude"):
-        if action == "altitude" and current_pos["alt"] < 2.0:
+        if action == "altitude" and not drone_armed:
             delta = cmd.get("delta")
             if delta is not None and float(delta) < 0:
                 raise ValueError("impossible de descendre : deja au sol")
@@ -367,7 +367,7 @@ async def execute_command(drone, cmd):
     elif action == "takeoff":
         await refresh_position(drone)
         target_alt = _target_altitude(cmd, DEFAULT_TAKEOFF_ALTITUDE_M)
-        if current_pos["alt"] >= 2.0:
+        if drone_armed:
             new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + target_alt
             await drone.action.goto_location(
                 current_pos["lat"], current_pos["lon"], new_abs_alt, float('nan')
@@ -383,7 +383,7 @@ async def execute_command(drone, cmd):
         return f"OK {msg} — altitude {current_pos['alt']:.1f}m"
 
     elif action == "goto":
-        if current_pos["alt"] < 2.0:
+        if not drone_armed:
             await drone.action.set_takeoff_altitude(alt)
             await drone.action.arm()
             await drone.action.takeoff()
@@ -404,7 +404,7 @@ async def execute_command(drone, cmd):
         return f"OK {msg} → ({lat:.5f}, {lon:.5f}) alt {alt}m"
 
     elif action == "orbit":
-        if current_pos["alt"] < 2.0:
+        if not drone_armed:
             await drone.action.set_takeoff_altitude(alt)
             await drone.action.arm()
             await drone.action.takeoff()
@@ -446,7 +446,7 @@ async def execute_command(drone, cmd):
     elif action == "altitude":
         await refresh_position(drone)
         target_alt = _target_altitude(cmd)
-        if current_pos["alt"] < 2.0:
+        if not drone_armed:
             await drone.action.set_takeoff_altitude(target_alt)
             await drone.action.arm()
             await drone.action.takeoff()
@@ -462,7 +462,7 @@ async def execute_command(drone, cmd):
         return f"OK {msg} — altitude {current_pos['alt']:.1f}m (cible {target_alt:.1f}m)"
 
     elif action in ("forward", "backward"):
-        if current_pos["alt"] < 2.0:
+        if not drone_armed:
             await drone.action.set_takeoff_altitude(alt)
             await drone.action.arm()
             await drone.action.takeoff()
