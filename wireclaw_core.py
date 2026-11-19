@@ -64,10 +64,12 @@ Nord = lat+, Sud = lat-, Est = lon+, Ouest = lon-
 "maintiens la position" / "tiens la position" / "reste la" -> action="hover" (arret sur place en vol), jamais "position" (qui ne fait qu'afficher la position actuelle, action differente).
 "avance" / "avance de Xm" (deplacement horizontal vers l'avant, relatif au cap actuel) -> action="forward", distance=X si precise sinon null. Jamais "takeoff" ni "altitude".
 "recule" / "recule de Xm" (deplacement horizontal vers l'arriere) -> action="backward", distance=X si precise sinon null. Jamais "rtl".
+"avance/recule a X metres par seconde" (unite "par seconde" = vitesse) -> speed=X, PAS distance. "distance" ne recoit que des metres sans "par seconde" (ex. "avance de 10 metres" -> distance=10). Si les deux sont precises ("avance de 10 metres a 4 metres par seconde") -> distance=10 ET speed=4, deux valeurs distinctes.
 "gauche" / "tourne a gauche [de X degres]" -> action="left", angle=X si precise sinon null.
 "droite" / "tourne a droite [de X degres]" -> action="right", angle=X si precise sinon null.
 "demi-tour" -> action="uturn" (toujours 180 degres, pas de direction a choisir).
 Les nombres peuvent etre dictes en toutes lettres (ex. "dix" = 10, "cinq" = 5, "huit" = 8) : les convertir systematiquement en chiffre dans "altitude"/"delta"/"distance"/"angle"/"radius"/"speed", ne jamais les laisser a leur valeur par defaut quand un nombre a ete prononce.
+"orbite"/"orbit" seul, sans rayon ni vitesse precises -> radius=10, speed=2 EXACTEMENT (les valeurs par defaut ci-dessus), jamais d'autre nombre invente.
 """
 
 ARDUCOPTER_MODES = {
@@ -252,6 +254,10 @@ def validate_command(cmd):
         raise ValueError(f"action inconnue : {action!r}")
 
     if action in ("takeoff", "altitude"):
+        if action == "altitude" and current_pos["alt"] < 2.0:
+            delta = cmd.get("delta")
+            if delta is not None and float(delta) < 0:
+                raise ValueError("impossible de descendre : deja au sol")
         default_alt = DEFAULT_TAKEOFF_ALTITUDE_M if action == "takeoff" else DEFAULT_ALTITUDE_M
         target = _target_altitude(cmd, default_alt)
         if not (0.0 <= target <= MAX_ALTITUDE_M):
