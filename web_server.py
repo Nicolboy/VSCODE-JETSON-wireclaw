@@ -66,6 +66,11 @@ async def index():
     return HTMLResponse(HTML)
 
 
+@app.get("/sim3d")
+async def sim3d():
+    return HTMLResponse(SIM3D_HTML)
+
+
 HTML = """<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -185,6 +190,7 @@ HTML = """<!DOCTYPE html>
 </head>
 <body>
   <h1>WIRECLAW</h1>
+  <div style="margin-bottom:16px;"><a href="/sim3d" style="color:#4db8ff; font-size:0.8rem;">→ Vue 3D</a></div>
 
   <div class="status-panel">
     <div>
@@ -369,6 +375,186 @@ HTML = """<!DOCTYPE html>
     refreshStatus();
     setInterval(refreshStatus, 2000);
   </script>
+</body>
+</html>
+"""
+
+SIM3D_HTML = """<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WireClaw — Simulation 3D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #87ceeb; font-family: monospace; }
+  #canvas-wrap { position: fixed; inset: 0; }
+  #hud {
+    position: fixed; top: 12px; left: 12px;
+    background: rgba(13,13,13,0.78);
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 12px 16px;
+    color: #e0e0e0;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    pointer-events: none;
+    min-width: 170px;
+  }
+  #hud h1 { color: #00ff88; font-size: 0.95rem; letter-spacing: 2px; margin-bottom: 8px; }
+  .hud-label { color: #666; text-transform: uppercase; font-size: 0.62rem; letter-spacing: 1px; }
+  .hud-value { color: #00ff88; }
+  #status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #ff5555; }
+  #status-dot.ok { background: #00ff88; }
+</style>
+</head>
+<body>
+  <div id="canvas-wrap"></div>
+  <div id="hud">
+    <h1>WIRECLAW — SIM 3D</h1>
+    <div><span id="status-dot"></span><span id="s-conn">connexion...</span></div>
+    <div class="hud-label">Altitude</div>
+    <div class="hud-value" id="s-alt">—</div>
+    <div class="hud-label">Cap</div>
+    <div class="hud-value" id="s-heading">—</div>
+    <div class="hud-label">Position / base</div>
+    <div class="hud-value" id="s-pos">—</div>
+  </div>
+
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb); // ciel bleu
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(-60, 45, 90);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.getElementById('canvas-wrap').appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI / 2 - 0.02; // ne pas passer sous le sol
+controls.update();
+
+// --- Lumiere ---
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(80, 120, 60);
+scene.add(sun);
+
+// --- Sol 200x200m, vert ---
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(200, 200),
+  new THREE.MeshStandardMaterial({ color: 0x2e7d32 })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// --- Repères tous les 25m (grille 200/25 = 8 divisions) ---
+const grid = new THREE.GridHelper(200, 8, 0xffffff, 0xaad4aa);
+grid.position.y = 0.01;
+scene.add(grid);
+
+// Points cardinaux a 95m du centre, pour se reperer avec le cap
+function addLabel(text, x, z) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(13,13,13,0.7)';
+  ctx.fillRect(0, 0, 128, 64);
+  ctx.fillStyle = '#00ff88';
+  ctx.font = 'bold 40px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 64, 32);
+  const tex = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+  sprite.scale.set(10, 5, 1);
+  sprite.position.set(x, 3, z);
+  scene.add(sprite);
+}
+addLabel('N', 0, -95);
+addLabel('S', 0, 95);
+addLabel('E', 95, 0);
+addLabel('O', -95, 0);
+
+// --- Drone : mat (ligne verticale jusqu'au sol) + corps + nez (cap) ---
+const droneGroup = new THREE.Group();
+scene.add(droneGroup);
+
+const body = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.9, 0.9, 0.4, 16),
+  new THREE.MeshStandardMaterial({ color: 0xff8800 })
+);
+droneGroup.add(body);
+
+const nose = new THREE.Mesh(
+  new THREE.ConeGeometry(0.4, 1.4, 12),
+  new THREE.MeshStandardMaterial({ color: 0x00ff88 })
+);
+nose.rotation.x = Math.PI / 2;
+nose.position.set(0, 0, -1.3);
+droneGroup.add(nose);
+
+const mastMat = new THREE.LineBasicMaterial({ color: 0x444444 });
+let mastGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+const mast = new THREE.Line(mastGeom, mastMat);
+scene.add(mast);
+
+// --- Boucle de rendu ---
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- Telemetrie en direct ---
+async function refreshStatus() {
+  const dot = document.getElementById('status-dot');
+  const conn = document.getElementById('s-conn');
+  try {
+    const r = await fetch('/status');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+
+    const x = d.east_m;
+    const z = -d.north_m;
+    const y = Math.max(d.alt, 0.2);
+
+    droneGroup.position.set(x, y, z);
+    droneGroup.rotation.y = -THREE.MathUtils.degToRad(d.heading);
+
+    mastGeom.setFromPoints([new THREE.Vector3(x, 0, z), new THREE.Vector3(x, y, z)]);
+
+    document.getElementById('s-alt').textContent = d.alt.toFixed(1) + ' m';
+    document.getElementById('s-heading').textContent = d.heading.toFixed(0) + '°';
+    document.getElementById('s-pos').textContent =
+      (d.north_m >= 0 ? '+' : '') + d.north_m.toFixed(1) + 'N, ' +
+      (d.east_m >= 0 ? '+' : '') + d.east_m.toFixed(1) + 'E';
+
+    dot.className = 'ok';
+    conn.textContent = d.armed ? 'en vol' : 'au sol';
+  } catch (e) {
+    dot.className = '';
+    conn.textContent = 'deconnecte';
+  }
+}
+refreshStatus();
+setInterval(refreshStatus, 500);
+</script>
 </body>
 </html>
 """

@@ -31,6 +31,7 @@ echo "Lancement ArduCopter..."
 /home/nicoboy/ardupilot/build/sitl/bin/arducopter \
     --model + \
     --speedup 1 \
+    --home -35.363262,149.165237,584,0 \
     --sim-address=127.0.0.1 \
     --defaults /home/nicoboy/wireclaw-jetson/sitl_params.parm \
     > /tmp/arducopter.log 2>&1 &
