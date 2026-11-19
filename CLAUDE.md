@@ -110,6 +110,14 @@ en dur, indépendamment du modèle.
 - Ne jamais faire exécuter une action critique sans passer par ce circuit
   interpréter → valider → (confirmer) → exécuter, même pour un ajout futur
   de code — c'est le seul filet contre une hallucination du LLM.
+- `voice_bridge/` (service `voice-bridge.service`, port 8766, exposé
+  publiquement via `sable.nicolasboyer.com`) pilote réellement le drone
+  depuis le 2026-11-19 : `/api/interpret` et `/api/interpret/confirm` ne
+  sont que des proxies vers `POST /command` et `/command/confirm` de
+  wireclaw.service — aucune logique d'interprétation ou d'exécution ne
+  doit jamais être dupliquée côté `voice_bridge/main.py`. Dupliquer ce
+  pipeline reviendrait à ouvrir un second chemin vers `execute_command()`
+  non protégé par `validate_command()`/la confirmation.
 
 ## Commandes de session
 ```bash
