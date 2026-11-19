@@ -34,6 +34,33 @@ Pi Zero 2W (caméra) ──H.264/UDP──► receive_cam.py (Jetson)
 Détail complet des ports réseau, des services systemd, et de l'historique
 des choix : [`CLAUDE.md`](CLAUDE.md).
 
+## Fonctionnement de la page (sable.nicolasboyer.com)
+
+1. **Capture audio (navigateur)** — le bouton PTT (ou la touche Espace)
+   enregistre le micro (`MediaRecorder`, webm/opus) et envoie le fichier au
+   Jetson à la relâche.
+2. **Transcription (Jetson, LLM audio local)** — conversion en WAV 16 kHz
+   (`ffmpeg`), puis transcription par **LFM3-audio** via l'API HTTP
+   d'Ollama, en local, sans appel externe. Une correction de vocabulaire
+   (mots proches d'une commande connue) s'applique sur le résultat.
+3. **Interprétation (Jetson, LLM texte local)** — le texte (transcrit ou
+   tapé) est interprété par **LFM3** (texte) selon un prompt structuré, qui
+   renvoie un JSON `{"action": ..., ...}`.
+4. **Validation en dur (Jetson, sans LLM)** — `validate_command()` vérifie
+   les bornes (altitude, géofence, distances, angles, action connue)
+   indépendamment de ce que le LLM a produit ; c'est le seul filet contre
+   une hallucination. Hors bornes → rejet complet, rien n'est exécuté.
+5. **Exécution (Jetson → drone simulé)** — commandes MAVLink réelles
+   (MAVSDK/pymavlink) envoyées à ArduPilot **SITL**, qui tourne aussi sur
+   le Jetson. Rien n'est encore relié à un drone physique.
+6. **Télémétrie et vue 3D (navigateur)** — le navigateur interroge
+   `/status` en continu ; les instruments de navigation et la vue 3D
+   (Three.js/WebGL) tournent **entièrement côté client**, le Jetson ne
+   renvoie que des nombres.
+
+Partage de charge : capture audio + rendu 3D → navigateur ; transcription +
+interprétation + validation + simulation de vol → Jetson, tout en local.
+
 ## État réel du projet
 
 - **Vol réel : pas encore.** Le contrôleur de vol est aujourd'hui ArduPilot
