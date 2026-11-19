@@ -209,17 +209,23 @@ def _distance_m(lat1, lon1, lat2, lon2):
     dlon = (lon2 - lon1) * 111320 * math.cos(math.radians(lat1))
     return math.hypot(dlat, dlon)
 
-def _target_altitude(cmd, default_alt=DEFAULT_ALTITUDE_M):
+def _target_altitude(cmd, default_alt=DEFAULT_ALTITUDE_M, is_takeoff=False):
     """Calcule l'altitude cible pour takeoff/altitude — seule source de
     verite, utilisee a la fois par validate_command() et execute_command()
     pour qu'elles ne puissent jamais diverger.
     Au sol (premier envol), delta n'a pas de sens : rien n'a encore decolle
-    pour lui servir de reference. LFM3 met souvent delta=0 (au lieu de null)
-    meme sans variation demandee, ce qui donnait une cible ≈0m — on l'ignore
-    donc totalement au sol, seule l'altitude absolue compte (defaut selon
-    default_alt — 1m pour un takeoff seul, 15m sinon).
+    pour lui servir de reference — on l'ignore donc normalement, seule
+    l'altitude absolue compte (defaut selon default_alt).
+    Exception pour is_takeoff=True : LFM3 met la valeur annoncee tantot
+    dans "altitude" tantot dans "delta" pour "decolle a Xm" (observe de
+    facon imprevisible mais toujours dans l'un des deux), et avant un
+    premier envol delta n'a de toute facon aucun sens relatif — les deux
+    champs sont donc acceptes comme source de la cible absolue.
     En vol, delta s'applique normalement comme variation relative."""
-    alt = float(cmd.get("altitude") or default_alt)
+    raw_alt = cmd.get("altitude")
+    if not raw_alt and is_takeoff:
+        raw_alt = cmd.get("delta")
+    alt = abs(float(raw_alt)) if raw_alt else default_alt
     if not drone_armed:
         return alt
     delta = cmd.get("delta")
@@ -264,7 +270,7 @@ def validate_command(cmd):
             if delta is not None and float(delta) < 0:
                 raise ValueError("impossible de descendre : deja au sol")
         default_alt = DEFAULT_TAKEOFF_ALTITUDE_M if action == "takeoff" else DEFAULT_ALTITUDE_M
-        target = _target_altitude(cmd, default_alt)
+        target = _target_altitude(cmd, default_alt, is_takeoff=(action == "takeoff"))
         if not (0.0 <= target <= MAX_ALTITUDE_M):
             raise ValueError(
                 f"altitude cible {target:.1f}m hors limite [0, {MAX_ALTITUDE_M:.0f}]m"
@@ -321,7 +327,7 @@ def describe_command(cmd):
     decision de confirmation)."""
     action = cmd.get("action")
     if action == "takeoff":
-        return f"takeoff → altitude cible {_target_altitude(cmd, DEFAULT_TAKEOFF_ALTITUDE_M):.1f}m"
+        return f"takeoff → altitude cible {_target_altitude(cmd, DEFAULT_TAKEOFF_ALTITUDE_M, is_takeoff=True):.1f}m"
     if action == "altitude":
         return f"altitude → altitude cible {_target_altitude(cmd):.1f}m"
     if action == "goto":
@@ -371,7 +377,7 @@ async def execute_command(drone, cmd):
 
     elif action == "takeoff":
         await refresh_position(drone)
-        target_alt = _target_altitude(cmd, DEFAULT_TAKEOFF_ALTITUDE_M)
+        target_alt = _target_altitude(cmd, DEFAULT_TAKEOFF_ALTITUDE_M, is_takeoff=True)
         if drone_armed:
             new_abs_alt = current_pos["abs_alt"] - current_pos["alt"] + target_alt
             await drone.action.goto_location(
